@@ -4,10 +4,56 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSongDto } from './dto/create-song.dto';
+import { MinioService } from '../storage/minio.service';
 
 @Injectable()
 export class SongsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private minio: MinioService,
+  ) {}
+
+  async findAll() {
+    const songs = await this.prisma.song.findMany({
+      include: { artists: true, groups: true, album: true, genre: true },
+    });
+    return Promise.all(
+      songs.map(async (s) => ({
+        ...s,
+        audioUrl: s.audioUrl
+          ? await this.refreshUrl(s.audioUrl, 'audio')
+          : null,
+        coverUrl: s.coverUrl
+          ? await this.refreshUrl(s.coverUrl, 'images')
+          : null,
+      })),
+    );
+  }
+
+  async findOne(id: string) {
+    const s = await this.prisma.song.findUnique({
+      where: { id },
+      include: { artists: true, groups: true, album: true, genre: true },
+    });
+    if (!s) return null;
+    return {
+      ...s,
+      audioUrl: s.audioUrl ? await this.refreshUrl(s.audioUrl, 'audio') : null,
+      coverUrl: s.coverUrl ? await this.refreshUrl(s.coverUrl, 'images') : null,
+    };
+  }
+
+  private async refreshUrl(url: string, bucket: 'audio' | 'images') {
+    if (!url.includes('?') || !this.minio.isEnabled()) return url;
+    try {
+      const u = new URL(url);
+      const objectName = u.pathname.split('/').pop();
+      if (!objectName) return url;
+      return await this.minio.presignGet({ bucket, objectName });
+    } catch {
+      return url;
+    }
+  }
 
   create(createSongDto: CreateSongDto) {
     const dto = createSongDto as unknown as Record<string, any>;
@@ -52,19 +98,6 @@ export class SongsService {
     };
     return this.prisma.song.create({
       data,
-    });
-  }
-
-  findAll() {
-    return this.prisma.song.findMany({
-      include: { artists: true, groups: true, album: true, genre: true },
-    });
-  }
-
-  findOne(id: string) {
-    return this.prisma.song.findUnique({
-      where: { id },
-      include: { artists: true, groups: true, album: true, genre: true },
     });
   }
 

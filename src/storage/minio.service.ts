@@ -79,15 +79,11 @@ export class MinioService {
         'Content-Type': opts.contentType || 'application/octet-stream',
       },
     );
-    const url = await this.client.presignedGetObject(
-      bucketName,
-      opts.objectName,
-      60 * 60 * 24 * 7,
-      opts.contentType
-        ? { 'response-content-type': opts.contentType }
-        : undefined,
-    ); // 7 days
-    return { bucket: bucketName, objectName: opts.objectName, url };
+    return this.presignGet({
+      bucket: opts.bucket,
+      objectName: opts.objectName,
+      contentType: opts.contentType,
+    });
   }
 
   async presignGet(opts: {
@@ -110,6 +106,14 @@ export class MinioService {
         ? { 'response-content-type': opts.contentType }
         : undefined,
     );
+    if (this.cfg.publicUrl) {
+      const u = new URL(url);
+      const publicBase = new URL(this.cfg.publicUrl);
+      u.protocol = publicBase.protocol;
+      u.host = publicBase.host;
+      if (publicBase.port) u.port = publicBase.port;
+      return u.toString();
+    }
     return url;
   }
 }
