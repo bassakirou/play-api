@@ -1,0 +1,46 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
+
+async function bootstrap() {
+  if (!process.env.SMTP_HOST) process.env.SMTP_HOST = 'localhost';
+  if (!process.env.SMTP_PORT) process.env.SMTP_PORT = '1025';
+  if (!process.env.SMTP_FROM)
+    process.env.SMTP_FROM = '"PyramidPlay Support" <support@pyramidplay.com>';
+  if (!process.env.APP_WEB_URL)
+    process.env.APP_WEB_URL = 'http://localhost:5173';
+  if (!process.env.SMTP_SECURE) process.env.SMTP_SECURE = 'false';
+  if (!process.env.SMTP_IGNORE_TLS) process.env.SMTP_IGNORE_TLS = 'true';
+
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
+
+  const config = new DocumentBuilder()
+    .setTitle('PyramidPlay API')
+    .setDescription('The PyramidPlay API description')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+
+  // Cast app to any to avoid type mismatch due to dependency duplication
+  const document = SwaggerModule.createDocument(app as any, config);
+  SwaggerModule.setup('api', app as any, document);
+
+  (app as any).useStaticAssets(join(process.cwd(), 'uploads'), {
+    prefix: '/uploads',
+  });
+
+  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+  await app.listen(port);
+}
+bootstrap();
