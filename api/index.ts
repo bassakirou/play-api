@@ -12,15 +12,28 @@ export const createNestServer = async (expressInstance: any) => {
     AppModule,
     new ExpressAdapter(expressInstance),
   );
+  
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  
+  // Robust CORS configuration
   app.enableCors({
-    origin: true,
+    origin: (origin, callback) => {
+      // Allow all origins in production, or specify your frontend domains
+      callback(null, true);
+    },
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
+    allowedHeaders: 'Content-Type, Accept, Authorization',
   });
+
   await app.init();
   return app;
 };
 
-createNestServer(server);
+// Vercel expects the handler to be exported
+const handler = async (req: any, res: any) => {
+  await createNestServer(server);
+  return server(req, res);
+};
 
-export default server;
+export default handler;
