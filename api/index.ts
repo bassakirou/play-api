@@ -10,23 +10,48 @@ let cachedApp: INestApplication;
 export const createNestServer = async (expressInstance: Express) => {
   if (cachedApp) return cachedApp;
 
-  const app = await NestFactory.create(
-    AppModule,
-    new ExpressAdapter(expressInstance),
-  );
+  console.log('--- Vercel Initialization Start ---');
+  console.log('Environment:', process.env.NODE_ENV);
+  console.log('DATABASE_URL present:', !!process.env.DATABASE_URL);
+  if (process.env.DATABASE_URL) {
+    console.log(
+      'DATABASE_URL protocol:',
+      process.env.DATABASE_URL.split(':')[0],
+    );
+  }
 
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  try {
+    const app = await NestFactory.create(
+      AppModule,
+      new ExpressAdapter(expressInstance),
+      {
+        logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+      },
+    );
 
-  app.enableCors({
-    origin: true,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-    allowedHeaders: 'Content-Type, Accept, Authorization',
-  });
+    console.log('NestFactory.create successful');
 
-  await app.init();
-  cachedApp = app;
-  return app;
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true }),
+    );
+
+    app.enableCors({
+      origin: true,
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      credentials: true,
+      allowedHeaders: 'Content-Type, Accept, Authorization',
+    });
+
+    console.log('App init starting...');
+    await app.init();
+    console.log('App init successful');
+
+    cachedApp = app;
+    return app;
+  } catch (error) {
+    console.error('CRITICAL: NestFactory.create failed!', error);
+    throw error;
+  }
 };
 
 export default async (req: any, res: any) => {
