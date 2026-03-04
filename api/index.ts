@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
 let cachedServer: any;
 
@@ -8,13 +9,11 @@ export const createNestServer = async () => {
   if (cachedServer) return cachedServer;
 
   console.log('--- Vercel Initialization Start (Optimized) ---');
-
+  
   try {
     const app = await NestFactory.create(AppModule);
 
-    app.useGlobalPipes(
-      new ValidationPipe({ transform: true, whitelist: true }),
-    );
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
     app.enableCors({
       origin: true,
@@ -23,9 +22,18 @@ export const createNestServer = async () => {
       allowedHeaders: 'Content-Type, Accept, Authorization',
     });
 
-    await app.init();
+    // Configuration Swagger pour Vercel
+    const config = new DocumentBuilder()
+      .setTitle('PyramidPlay API')
+      .setDescription('The PyramidPlay API description (Production)')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document);
 
-    // On récupère l'instance Express interne de NestJS
+    await app.init();
+    
     cachedServer = app.getHttpAdapter().getInstance();
     return cachedServer;
   } catch (error) {
