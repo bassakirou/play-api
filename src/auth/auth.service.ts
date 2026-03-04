@@ -17,8 +17,20 @@ export class AuthService {
   ) {}
 
   async validateUser(email: string, pass: string): Promise<any> {
+    console.log(`[AuthService] Validation pour: ${email}`);
     const user = await this.usersService.findByEmail(email);
-    if (user && (await bcrypt.compare(pass, user.password))) {
+    if (!user) {
+      console.log(`[AuthService] Utilisateur non trouvé pour: ${email}`);
+      return null;
+    }
+
+    console.log(
+      `[AuthService] Utilisateur trouvé. Vérification du mot de passe...`,
+    );
+    const isMatch = await bcrypt.compare(pass, user.password);
+    console.log(`[AuthService] Résultat comparaison bcrypt: ${isMatch}`);
+
+    if (isMatch) {
       const { password, ...result } = user;
       return result;
     }
@@ -89,6 +101,33 @@ export class AuthService {
     });
 
     return { message: 'Password reset successful.' };
+  }
+
+  async setupFirstAdmin(createUserDto: CreateUserDto) {
+    const users = await this.usersService.findAll();
+    console.log(`[AuthService] Nombre d'utilisateurs actuels: ${users.length}`);
+    if (users.length > 0) {
+      console.log(
+        '[AuthService] Liste des utilisateurs existants:',
+        users.map((u) => u.email),
+      );
+      throw new UnauthorizedException('Super Admin already exists');
+    }
+
+    console.log(
+      `[AuthService] Création du premier administrateur: ${createUserDto.email}`,
+    );
+
+    const user = await this.usersService.create({
+      ...createUserDto,
+      role: 'ADMIN',
+    });
+
+    const payload = { email: user.email, sub: user.id, role: 'ADMIN' };
+    return {
+      access_token: this.jwtService.sign(payload),
+      user,
+    };
   }
 
   async changePassword(userId: string, currentPass: string, newPass: string) {

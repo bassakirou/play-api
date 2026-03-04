@@ -39,6 +39,11 @@ export class AuthController {
     return this.authService.resetPassword(body.token, body.password);
   }
 
+  @Post('setup')
+  setup(@Body() createUserDto: CreateUserDto) {
+    return this.authService.setupFirstAdmin(createUserDto);
+  }
+
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('change-password')

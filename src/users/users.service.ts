@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -66,6 +67,10 @@ export class UsersService {
     return this.prisma.user.findMany({
       include: { role: true, artistProfile: true },
     });
+  }
+
+  count() {
+    return this.prisma.user.count();
   }
 
   findOne(id: string) {

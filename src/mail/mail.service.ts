@@ -12,12 +12,17 @@ export class MailService {
     const secure =
       (this.configService.get<string>('SMTP_SECURE') || 'false') === 'true';
     const ignoreTLS =
-      (this.configService.get<string>('SMTP_IGNORE_TLS') || 'true') === 'true';
+      (this.configService.get<string>('SMTP_IGNORE_TLS') || 'false') === 'true';
+    
+    const user = this.configService.get<string>('SMTP_USER');
+    const pass = this.configService.get<string>('SMTP_PASS');
+
     this.transporter = nodemailer.createTransport({
       host,
       port,
       secure,
       ignoreTLS,
+      ...(user && pass ? { auth: { user, pass } } : {}),
     });
   }
 
