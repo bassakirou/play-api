@@ -1,35 +1,16 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
-import { ValidationPipe, INestApplication } from '@nestjs/common';
-import { ExpressAdapter } from '@nestjs/platform-express';
-import express, { Express } from 'express';
+import { ValidationPipe } from '@nestjs/common';
 
-const server: Express = express();
-let cachedApp: INestApplication;
+let cachedServer: any;
 
-export const createNestServer = async (expressInstance: Express) => {
-  if (cachedApp) return cachedApp;
+export const createNestServer = async () => {
+  if (cachedServer) return cachedServer;
 
-  console.log('--- Vercel Initialization Start ---');
-  console.log('Environment:', process.env.NODE_ENV);
-  console.log('DATABASE_URL present:', !!process.env.DATABASE_URL);
-  if (process.env.DATABASE_URL) {
-    console.log(
-      'DATABASE_URL protocol:',
-      process.env.DATABASE_URL.split(':')[0],
-    );
-  }
+  console.log('--- Vercel Initialization Start (Optimized) ---');
 
   try {
-    const app = await NestFactory.create(
-      AppModule,
-      new ExpressAdapter(expressInstance),
-      {
-        logger: ['error', 'warn', 'log', 'debug', 'verbose'],
-      },
-    );
-
-    console.log('NestFactory.create successful');
+    const app = await NestFactory.create(AppModule);
 
     app.useGlobalPipes(
       new ValidationPipe({ transform: true, whitelist: true }),
@@ -42,29 +23,27 @@ export const createNestServer = async (expressInstance: Express) => {
       allowedHeaders: 'Content-Type, Accept, Authorization',
     });
 
-    console.log('App init starting...');
     await app.init();
-    console.log('App init successful');
 
-    cachedApp = app;
-    return app;
+    // On récupère l'instance Express interne de NestJS
+    cachedServer = app.getHttpAdapter().getInstance();
+    return cachedServer;
   } catch (error) {
-    console.error('CRITICAL: NestFactory.create failed!', error);
+    console.error('CRITICAL: NestJS bootstrap failed!', error);
     throw error;
   }
 };
 
 export default async (req: any, res: any) => {
   try {
-    const app = await createNestServer(server);
+    const server = await createNestServer();
     server(req, res);
   } catch (error) {
-    console.error('NestJS Initialization Error:', error);
+    console.error('Final Handler Error:', error);
     res.status(500).json({
       statusCode: 500,
       message: 'Internal Server Error during NestJS initialization',
       error: error.message,
-      stack: error.stack,
     });
   }
 };
