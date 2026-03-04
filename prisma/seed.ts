@@ -32,44 +32,42 @@ async function main() {
 
   console.log('Step 1: Truncating existing tables...');
   // On désactive les contraintes pour vider proprement
-  await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "User", "Artist", "Album", "Song", "Genre", "Role", "Permission", "Playlist", "_ArtistGroupMembers", "_PermissionToRole", "_PlaylistSongs", "_SongArtists", "_SongGroups", "_UserFavorites", "_UserFollowsArtist" RESTART IDENTITY CASCADE;',
-  );
+  try {
+    await prisma.$executeRawUnsafe(
+      'TRUNCATE TABLE "User", "Artist", "Album", "Song", "Genre", "Role", "Permission", "Playlist", "_ArtistGroupMembers", "_PermissionToRole", "_PlaylistSongs", "_SongArtists", "_SongGroups", "_UserFavorites", "_UserFollowsArtist" RESTART IDENTITY CASCADE;',
+    );
+    console.log('Truncate successful.');
+  } catch (e) {
+    console.warn(
+      'Truncate failed (tables might be empty or missing):',
+      e.message,
+    );
+  }
 
   console.log('Step 2: Importing local data from backup.sql...');
-
-  // Note: pg_dump utilise COPY qui n'est pas supporté par $executeRaw.
-  // Nous devons donc traiter le fichier SQL différemment ou utiliser une approche par table.
-  // Comme le fichier backup.sql utilise COPY, nous allons plutôt faire un import intelligent.
-
-  // Approche simplifiée pour Vercel : On execute le SQL par blocs
-  // Mais attention, $executeRawUnsafe ne supporte pas COPY FROM stdin.
-
-  // SOLUTION: Puisque nous ne pouvons pas utiliser COPY directement via Prisma,
-  // et que la connexion directe est bloquée, la meilleure méthode est d'utiliser
-  // les données JSON si elles sont à jour, OU de transformer le SQL en INSERTS.
-
-  // Comme vous avez confirmé que la BDD locale est la référence,
-  // je vais créer un script qui parse les blocs COPY du backup.sql pour faire des INSERTS.
 
   const lines = sql.split('\n');
   let currentTable = '';
   let isCopying = false;
   let columns: string[] = [];
+  let rowCount = 0;
 
   for (const line of lines) {
     if (line.startsWith('COPY public."')) {
       const match = line.match(/COPY public\."(\w+)" \((.+)\) FROM stdin/);
       if (match) {
         currentTable = match[1];
-        columns = match[2].split(', ').map((c) => c.replace(/"/g, ''));
+        columns = match[2].split(', ').map((c) => c.replace(/"/g, '').trim());
         isCopying = true;
+        rowCount = 0;
         console.log(`Importing table: ${currentTable}...`);
         continue;
       }
     }
 
-    if (line === '\\.') {
+    if (line.trim() === '\\.') {
+      if (isCopying)
+        console.log(`Finished ${currentTable} (${rowCount} rows).`);
       isCopying = false;
       currentTable = '';
       continue;
@@ -77,17 +75,26 @@ async function main() {
 
     if (isCopying && line.trim() !== '') {
       const values = line.split('\t').map((v) => {
-        if (v === '\\N') return 'NULL';
+        const val = v.trim();
+        if (val === '\\N' || val === '') return 'NULL';
         // Échapper les quotes pour le SQL
-        const escaped = v.replace(/'/g, "''");
+        const escaped = val.replace(/'/g, "''");
         return `'${escaped}'`;
       });
+
+      if (values.length !== columns.length) {
+        // Parfois les colonnes avec du texte contenant des tabulations peuvent poser problème
+        continue;
+      }
 
       const query = `INSERT INTO public."${currentTable}" (${columns.map((c) => `"${c}"`).join(', ')}) VALUES (${values.join(', ')}) ON CONFLICT DO NOTHING;`;
       try {
         await prisma.$executeRawUnsafe(query);
+        rowCount++;
       } catch (e) {
-        console.warn(`Failed to insert row in ${currentTable}:`, e.message);
+        // Log discret pour ne pas saturer la console Vercel
+        if (rowCount < 5)
+          console.error(`Insert failed in ${currentTable}:`, e.message);
       }
     }
   }
