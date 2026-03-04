@@ -7,7 +7,10 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   async onModuleInit() {
-    await this.$connect();
+    // Dans un environnement Serverless (Vercel), on évite de forcer la connexion au démarrage
+    // pour réduire le temps de bootstrap et éviter les timeouts FUNCTION_INVOCATION_FAILED.
+    // Prisma se connectera automatiquement lors de la première requête.
+    // await this.$connect();
   }
 
   async onModuleDestroy() {
