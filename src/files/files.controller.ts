@@ -90,13 +90,26 @@ export class FilesController {
     if (this.minio.isEnabled()) {
       const objectName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
       try {
-        return await this.minio.upload({
+        console.log(
+          `[FilesController] Uploading audio to Minio: ${objectName}`,
+        );
+        const result = await this.minio.upload({
           bucket: 'audio',
           objectName,
           buffer: file.buffer,
           contentType: file.mimetype,
         });
-      } catch {}
+        console.log(
+          `[FilesController] Minio audio upload success: ${result.url}`,
+        );
+        return result;
+      } catch (err) {
+        console.error(
+          '[FilesController] Minio audio upload failed:',
+          err.message,
+        );
+        throw new Error(`Audio upload failed: ${err.message}`);
+      }
     }
     if (!file.filename && file.buffer) {
       const dest = join(process.cwd(), 'uploads', 'audio');
@@ -150,13 +163,20 @@ export class FilesController {
     if (this.minio.isEnabled()) {
       const objectName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
       try {
-        return await this.minio.upload({
+        console.log(`[FilesController] Uploading to Minio: ${objectName}`);
+        const result = await this.minio.upload({
           bucket: 'images',
           objectName,
           buffer: file.buffer,
           contentType: file.mimetype,
         });
-      } catch {}
+        console.log(`[FilesController] Minio upload success: ${result.url}`);
+        return result;
+      } catch (err) {
+        console.error('[FilesController] Minio upload failed:', err.message);
+        // On ne fait pas de fallback disque sur Vercel car le FS est en lecture seule
+        throw new Error(`Upload failed: ${err.message}`);
+      }
     }
     if (!file.filename && file.buffer) {
       const dest = join(process.cwd(), 'uploads', 'images');
