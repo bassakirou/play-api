@@ -1,0 +1,926 @@
+[
+  {
+    "id": 1,
+    "title": "Mentalite Africaine",
+    "artist": [
+      {
+        "id": 1,
+        "name": "Prince Eyango",
+        "image": "thumbnails/eyango.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/eyango.webp",
+    "src": "/music/soa.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 2,
+    "title": "Mokte",
+    "artist": [
+      {
+        "id": 31,
+        "name": "Kareyce Fotso",
+        "image": "thumbnails/kareyce.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/kareyce.webp",
+    "src": "/music/soa.mp3",
+    "genres": [
+      { "id": 5, "name": "Assiko" },
+      { "id": 15, "name": "Folklore Camerounais" }
+    ],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 3,
+    "title": "Essuw'am",
+    "artist": [
+      {
+        "id": 3,
+        "name": "Charlotte Mbango",
+        "image": "thumbnails/mbango.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/mbango.webp",
+    "src": "/music/clavie.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 4,
+    "title": "Kwegne",
+    "artist": [
+      {
+        "id": 31,
+        "name": "Kareyce Fotso",
+        "image": "thumbnails/kareyce2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/kareyce2.webp",
+    "src": "/music/ndolo.mp3",
+    "genres": [{ "id": 5, "name": "Assiko" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 5,
+    "title": "Ndutu",
+    "artist": [
+      {
+        "id": 4,
+        "name": "Locko",
+        "image": "thumbnails/locko.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/locko.webp",
+    "src": "/music/sawa.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 6,
+    "title": "C'est la vie",
+    "artist": [
+      {
+        "id": 18,
+        "name": "Henri Dikongué",
+        "image": "thumbnails/henridikonge.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/henridikonge.webp",
+    "src": "/music/clavie.mp3",
+    "genres": [{ "id": 15, "name": "Folklore Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 7,
+    "title": "Tourbillon",
+    "artist": [
+      {
+        "id": 7,
+        "name": "Ben Decca",
+        "image": "thumbnails/bendecca.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/bendecca.webp",
+    "src": "/music/sawa.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 8,
+    "title": "Dube l'am",
+    "artist": [
+      {
+        "id": 6,
+        "name": "Charlotte Dipanda",
+        "image": "thumbnails/charlotte1.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/charlotte1.webp",
+    "src": "/music/trouverlavie.mp3",
+    "genres": [{ "id": 11, "name": "Afro-soul Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 9,
+    "title": "Massa",
+    "artist": [
+      {
+        "id": 6,
+        "name": "Charlotte Dipanda",
+        "image": "thumbnails/charlotte2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/charlotte2.webp",
+    "src": "/music/ndolo.mp3",
+    "genres": [{ "id": 11, "name": "Afro-soul Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 10,
+    "title": "Patrimoine",
+    "artist": [
+      {
+        "id": 7,
+        "name": "Lady Ponce",
+        "image": "thumbnails/ladyponce.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/ladyponce.webp",
+    "src": "/music/kalabancoro.mp3",
+    "genres": [{ "id": 2, "name": "Bikutsi" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 11,
+    "title": "Bombe A",
+    "artist": [
+      {
+        "id": 7,
+        "name": "Lady Ponce",
+        "image": "thumbnails/ladyponce2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/ladyponce2.webp",
+    "src": "/music/soa.mp3",
+    "genres": [{ "id": 2, "name": "Bikutsi" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 12,
+    "title": "Chacun sa chance",
+    "artist": [
+      {
+        "id": 8,
+        "name": "Krys M",
+        "image": "thumbnails/krysm.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/krysm.webp",
+    "src": "/music/clavie.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 13,
+    "title": "Golden Boy",
+    "artist": [
+      {
+        "id": 9,
+        "name": "Magasco",
+        "image": "thumbnails/magasco.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/magasco.webp",
+    "src": "/music/ndolo.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 14,
+    "title": "Mine",
+    "artist": [
+      {
+        "id": 10,
+        "name": "Blanche Bailly",
+        "image": "thumbnails/bailly.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/bailly.webp",
+    "src": "/music/sawa.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 15,
+    "title": "Trouver la vie",
+    "artist": [
+      {
+        "id": 11,
+        "name": "Petit Pays",
+        "image": "thumbnails/petitpays.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/petitpays.webp",
+    "src": "/music/trouverlavie.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 16,
+    "title": "Frotambo",
+    "artist": [
+      {
+        "id": 11,
+        "name": "Petit Pays",
+        "image": "thumbnails/petitpays2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/petitpays2.webp",
+    "src": "/music/trouverlavie.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 17,
+    "title": "African Typic Collection",
+    "artist": [
+      {
+        "id": 12,
+        "name": "Sam Fan Thomas",
+        "image": "thumbnails/sam.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/sam.webp",
+    "src": "/music/kalabancoro.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 18,
+    "title": "God Don Kam",
+    "artist": [
+      {
+        "id": 13,
+        "name": "Jovi",
+        "image": "thumbnails/jovi.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/jovi.webp",
+    "src": "/music/soa.mp3",
+    "genres": [{ "id": 10, "name": "Rap Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 19,
+    "title": "Mboko God",
+    "artist": [
+      {
+        "id": 13,
+        "name": "Jovi",
+        "image": "thumbnails/jovi2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/jovi2.webp",
+    "src": "/music/clavie.mp3",
+    "genres": [{ "id": 10, "name": "Rap Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 20,
+    "title": "Faya",
+    "artist": [
+      {
+        "id": 14,
+        "name": "Mimie",
+        "image": "thumbnails/mimie.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/mimie.webp",
+    "src": "/music/ndolo.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 21,
+    "title": "Soundsation",
+    "artist": [
+      {
+        "id": 14,
+        "name": "Mimie",
+        "image": "thumbnails/mimie2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/mimie2.webp",
+    "src": "/music/sawa.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 22,
+    "title": "Dreamy Eyes",
+    "artist": [
+      {
+        "id": 15,
+        "name": "Rinyu",
+        "image": "thumbnails/rinyu.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/rinyu.webp",
+    "src": "/music/trouverlavie.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 23,
+    "title": "Deux oeufs spaghetti",
+    "artist": [
+      {
+        "id": 16,
+        "name": "Ko-c",
+        "image": "thumbnails/kocee.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/kocee.webp",
+    "src": "/music/kalabancoro.mp3",
+    "genres": [
+      { "id": 10, "name": "Rap Camerounais" },
+      { "id": 9, "name": "Afropop Camerounais" }
+    ],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 24,
+    "title": "Tendon",
+    "artist": [
+      {
+        "id": 17,
+        "name": "RENISS",
+        "image": "thumbnails/reniss.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/reniss.webp",
+    "src": "/music/soa.mp3",
+    "genres": [{ "id": 2, "name": "Bikutsi" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 25,
+    "title": "Wa",
+    "artist": [
+      {
+        "id": 18,
+        "name": "Henri Dikongué",
+        "image": "thumbnails/henridikonge.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/henridikonge.webp",
+    "src": "/music/clavie.mp3",
+    "genres": [{ "id": 15, "name": "Folklore Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 26,
+    "title": "Cloud Nine",
+    "artist": [
+      {
+        "id": 4,
+        "name": "Locko",
+        "image": "thumbnails/locko2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/locko2.webp",
+    "src": "/music/ndolo.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 27,
+    "title": "Anita",
+    "artist": [
+      {
+        "id": 19,
+        "name": "Salatiel",
+        "image": "thumbnails/salatiel.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/salatiel.webp",
+    "src": "/music/sawa.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 28,
+    "title": "Family Man",
+    "artist": [
+      {
+        "id": 19,
+        "name": "Salatiel",
+        "image": "thumbnails/salatiel3.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/salatiel3.webp",
+    "src": "/music/trouverlavie.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 29,
+    "title": "Africa Represented",
+    "artist": [
+      {
+        "id": 19,
+        "name": "Salatiel",
+        "image": "thumbnails/salatiel2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/salatiel2.webp",
+    "src": "/music/kalabancoro.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 30,
+    "title": "PROBLEMS",
+    "artist": [
+      {
+        "id": 20,
+        "name": "Stanley Enow",
+        "image": "thumbnails/stanley.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/stanley.webp",
+    "src": "/music/soa.mp3",
+    "genres": [{ "id": 10, "name": "Rap Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 31,
+    "title": "Doï La Mulema",
+    "artist": [
+      {
+        "id": 21,
+        "name": "Grace Decca",
+        "image": "thumbnails/gracedeca.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/gracedeca.webp",
+    "src": "/music/clavie.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 32,
+    "title": "Appelle-moi Princesse",
+    "artist": [
+      {
+        "id": 21,
+        "name": "Grace Decca",
+        "image": "thumbnails/gracedeca2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/gracedeca2.webp",
+    "src": "/music/ndolo.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 33,
+    "title": "Metamorphose",
+    "artist": [
+      {
+        "id": 1,
+        "name": "Prince Eyango",
+        "image": "thumbnails/eyango2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/eyango2.webp",
+    "src": "/music/sawa.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 34,
+    "title": "Scenes From My Life",
+    "artist": [
+      {
+        "id": 22,
+        "name": "Richard Bona",
+        "image": "thumbnails/bona.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/bona.webp",
+    "src": "/music/trouverlavie.mp3",
+    "genres": [{ "id": 12, "name": "Jazz Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 35,
+    "title": "Tiki",
+    "artist": [
+      {
+        "id": 22,
+        "name": "Richard Bona",
+        "image": "thumbnails/bona2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/bona2.webp",
+    "src": "/music/kalabancoro.mp3",
+    "genres": [{ "id": 12, "name": "Jazz Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 36,
+    "title": "Reverence",
+    "artist": [
+      {
+        "id": 22,
+        "name": "Richard Bona",
+        "image": "thumbnails/bona3.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/bona3.webp",
+    "src": "/music/soa.mp3",
+    "genres": [{ "id": 12, "name": "Jazz Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 37,
+    "title": "Munia (The Tale)",
+    "artist": [
+      {
+        "id": 22,
+        "name": "Richard Bona",
+        "image": "thumbnails/bona4.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/bona4.webp",
+    "src": "/music/kalabancoro.mp3",
+    "genres": [{ "id": 12, "name": "Jazz Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 38,
+    "title": "Arabica",
+    "artist": [
+      {
+        "id": 23,
+        "name": "Tala André Marie",
+        "image": "thumbnails/tala.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/tala.webp",
+    "src": "/music/clavie.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 39,
+    "title": "Bend Skin",
+    "artist": [
+      {
+        "id": 23,
+        "name": "Tala André Marie",
+        "image": "thumbnails/tala2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/tala2.webp",
+    "src": "/music/ndolo.mp3",
+    "genres": [{ "id": 3, "name": "Bendskin" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 40,
+    "title": "Les meilleurs titres",
+    "artist": [
+      {
+        "id": 24,
+        "name": "Marthe Zambo",
+        "image": "thumbnails/mzambo.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/mzambo.webp",
+    "src": "/music/sawa.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 41,
+    "title": "Bikola",
+    "artist": [
+      {
+        "id": 24,
+        "name": "Marthe Zambo",
+        "image": "thumbnails/mzambo2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/mzambo2.webp",
+    "src": "/music/trouverlavie.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 42,
+    "title": "Africadelic",
+    "artist": [
+      {
+        "id": 25,
+        "name": "Manu Dibango",
+        "image": "thumbnails/manu.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/manu.webp",
+    "src": "/music/kalabancoro.mp3",
+    "genres": [{ "id": 13, "name": "Afro-jazz Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 43,
+    "title": "African Voodoo",
+    "artist": [
+      {
+        "id": 25,
+        "name": "Manu Dibango",
+        "image": "thumbnails/manu2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/manu2.webp",
+    "src": "/music/soa.mp3",
+    "genres": [{ "id": 13, "name": "Afro-jazz Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 44,
+    "title": "People",
+    "artist": [
+      {
+        "id": 26,
+        "name": "Libianca",
+        "image": "thumbnails/libianca.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/libianca.webp",
+    "src": "/music/clavie.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 45,
+    "title": "Walk Away",
+    "artist": [
+      {
+        "id": 26,
+        "name": "Libianca",
+        "image": "thumbnails/libianca2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/libianca2.webp",
+    "src": "/music/ndolo.mp3",
+    "genres": [{ "id": 9, "name": "Afropop Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 46,
+    "title": "The Best Of, Vol. 1",
+    "artist": [
+      {
+        "id": 27,
+        "name": "Eboa Lotin",
+        "image": "thumbnails/eboalotin.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/eboalotin.webp",
+    "src": "/music/sawa.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 47,
+    "title": "Soukous Fusion",
+    "artist": [
+      {
+        "id": 28,
+        "name": "Kotto Bass",
+        "image": "thumbnails/kotto.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/kotto.webp",
+    "src": "/music/trouverlavie.mp3",
+    "genres": [{ "id": 14, "name": "Soukous Camerounais" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 48,
+    "title": "La Sauce",
+    "artist": [
+      {
+        "id": 17,
+        "name": "RENISS",
+        "image": "thumbnails/reniss2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/reniss2.webp",
+    "src": "/music/kalabancoro.mp3",
+    "genres": [{ "id": 2, "name": "Bikutsi" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 49,
+    "title": "Best of 1 / Te revoir",
+    "artist": [
+      {
+        "id": 29,
+        "name": "Elvis Kemayo",
+        "image": "thumbnails/elvisk.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/elvisk.webp",
+    "src": "/music/soa.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 50,
+    "title": "Vision",
+    "artist": [
+      {
+        "id": 29,
+        "name": "Elvis Kemayo",
+        "image": "thumbnails/elvisk2.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/elvisk2.webp",
+    "src": "/music/clavie.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 51,
+    "title": "Privatisation",
+    "artist": [
+      {
+        "id": 30,
+        "name": "Longue Longue",
+        "image": "thumbnails/longue.webp",
+        "createAt": "2024-01-01T00:00:00Z",
+        "updateAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "image": "thumbnails/longue.webp",
+    "src": "/music/ndolo.mp3",
+    "genres": [{ "id": 1, "name": "Makossa" }],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  }
+]

@@ -1,0 +1,68 @@
+PYRAMID PLAY IA
+
+ACTIONS BACKEND
+Si tu veux, je peux aussi ajouter des filtres côté serveur (ex: limit , type=songs|albums|artists ) pour la recherche, ou un endpoint Library dédié qui renvoie uniquement les contenus pertinents.
+
+Pour continuer le développement, vous pouvez :
+
+Ajouter plus de pages (artistes, albums, playlists)
+Implémenter la recherche
+Ajouter la gestion des playlists
+Améliorer l'interface utilisateur
+Ajouter plus de fonctionnalités au lecteur audio
+Avez-vous des questions ou souhaitez-vous que je développe une fonctionnalité particulière ?
+
+Pour continuer l'amélioration de l'application, voici les prochaines étapes possibles :
+
+Ajouter la création et la modification de playlists
+Implémenter un système de favoris
+Ajouter des recommandations basées sur l'historique d'écoute
+Améliorer la gestion des utilisateurs et l'authentification
+Ajouter des statistiques d'écoute
+Implémenter le partage de playlists
+Voulez-vous que je développe l'une de ces fonctionnalités supplémentaires ?
+
+Authentification
+J'ai mis en place un système d'authentification complet avec les fonctionnalités suivantes :
+
+Configuration de l'authentification :
+Utilisation de NextAuth.js avec le provider Credentials
+Authentification par email/mot de passe
+Stockage des sessions avec JWT
+Protection des routes avec middleware
+Base de données :
+Ajout de la table users dans db.json
+Utilisateur admin par défaut :
+Email : admin@gmail.com
+Mot de passe : 12345
+Rôle : admin
+Interface utilisateur :
+Page de connexion moderne et responsive
+Gestion des erreurs d'authentification
+Redirection automatique après connexion
+Protection de toutes les routes sauf login
+Sécurité :
+Hachage des mots de passe avec bcrypt
+Validation des credentials
+Sessions JWT sécurisées
+Middleware de protection des routes
+Pour utiliser l'application :
+
+Accédez à l'application, vous serez automatiquement redirigé vers /login
+Connectez-vous avec :
+Email : admin@gmail.com
+Mot de passe : 12345
+Après connexion, vous aurez accès à toutes les fonctionnalités de l'application
+Les routes protégées incluent :
+
+La page d'accueil
+Les playlists
+Les favoris
+Les recommandations
+Les artistes et albums
+Seules ces routes sont accessibles sans authentification :
+
+/login
+/api/auth/*
+Les ressources statiques (images, fonts)
+Voulez-vous que j'ajoute d'autres fonctionnalités à la gestion des utilisateurs ?

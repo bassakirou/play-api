@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for Authentication and RBAC
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  firstName String?
+  lastName  String?
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  artist    Artist?
+  playlists Playlist[]
+  likes     Like[]
+}
+
+enum Role {
+  USER
+  ARTIST
+  ADMIN
+  LABEL_MANAGER
+}
+
+// Artist Profile
+model Artist {
+  id          String   @id @default(uuid())
+  name        String
+  bio         String?
+  imageUrl    String?
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  albums      Album[]
+  songs       Song[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Album
+model Album {
+  id          String   @id @default(uuid())
+  title       String
+  coverUrl    String?
+  releaseDate DateTime
+  artistId    String
+  artist      Artist   @relation(fields: [artistId], references: [id])
+  songs       Song[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Song
+model Song {
+  id          String   @id @default(uuid())
+  title       String
+  duration    Int      // in seconds
+  fileUrl     String   // MinIO URL
+  coverUrl    String?
+  artistId    String
+  artist      Artist   @relation(fields: [artistId], references: [id])
+  albumId     String?
+  album       Album?   @relation(fields: [albumId], references: [id])
+  likes       Like[]
+  playlistItems PlaylistItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Playlist
+model Playlist {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  coverUrl    String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  items       PlaylistItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PlaylistItem {
+  id          String   @id @default(uuid())
+  playlistId  String
+  playlist    Playlist @relation(fields: [playlistId], references: [id])
+  songId      String
+  song        Song     @relation(fields: [songId], references: [id])
+  addedAt     DateTime @default(now())
+
+  @@unique([playlistId, songId])
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  songId    String
+  song      Song     @relation(fields: [songId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, songId])
+}

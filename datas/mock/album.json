@@ -1,0 +1,75 @@
+[
+  {
+    "id": 1,
+    "title": "Best of Makossa",
+    "artist": "Ben Decca",
+    "cover": "thumbnails/bendecca.webp",
+    "coverImage": [
+      "thumbnails/bendecca.webp",
+      "thumbnails/petitpays.webp",
+      "thumbnails/sam.webp"
+    ],
+    "genres": [ { "id": 1, "name": "Makossa" } ],
+    "trackIds": [7, 15, 17],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 2,
+    "title": "Afro Love",
+    "artist": "Locko",
+    "cover": "thumbnails/locko.webp",
+    "coverImage": [
+      "thumbnails/locko.webp",
+      "thumbnails/locko2.webp"
+    ],
+    "genres": [ { "id": 9, "name": "Afropop Camerounais" } ],
+    "trackIds": [5, 26],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 3,
+    "title": "Golden Boy",
+    "artist": "Prince Eyango",
+    "cover": "thumbnails/eyango.webp",
+    "coverImage": [
+      "thumbnails/eyango.webp",
+      "thumbnails/mbango.webp",
+      "thumbnails/sam.webp"
+    ],
+    "genres": [ { "id": 1, "name": "Makossa" } ],
+    "trackIds": [1, 3, 17],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 4,
+    "title": "Ndolo",
+    "artist": "Charlotte Dipanda",
+    "cover": "thumbnails/charlotte1.webp",
+    "coverImage": [
+      "thumbnails/charlotte1.webp",
+      "thumbnails/charlotte2.webp"
+    ],
+    "genres": [ { "id": 11, "name": "Afro-soul Camerounais" } ],
+    "trackIds": [8, 9],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": 5,
+    "title": "Akwandor Classics",
+    "artist": "Salatiel",
+    "cover": "thumbnails/salatiel.webp",
+    "coverImage": [
+      "thumbnails/salatiel.webp",
+      "thumbnails/salatiel3.webp",
+      "thumbnails/salatiel2.webp"
+    ],
+    "genres": [ { "id": 9, "name": "Afropop Camerounais" } ],
+    "trackIds": [27, 28, 29],
+    "createAt": "2024-01-01T00:00:00Z",
+    "updateAt": "2024-01-01T00:00:00Z"
+  }
+]

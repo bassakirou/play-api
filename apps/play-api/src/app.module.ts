@@ -1,0 +1,40 @@
+import { Module } from '@nestjs/common';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+import { PrismaModule } from './prisma/prisma.module';
+import { UsersModule } from './users/users.module';
+import { RolesModule } from './roles/roles.module';
+import { ArtistsModule } from './artists/artists.module';
+import { AlbumsModule } from './albums/albums.module';
+import { SongsModule } from './songs/songs.module';
+import { GenresModule } from './genres/genres.module';
+import { PermissionsModule } from './permissions/permissions.module';
+import { HealthController } from './health.controller';
+import { FilesController } from './files/files.controller';
+import { MinioService } from './storage/minio.service';
+import { AuthModule } from './auth/auth.module';
+import { ArtistGroupsModule } from './artist-groups/artist-groups.module';
+import { MailModule } from './mail/mail.module';
+import { PlaylistsModule } from './playlists/playlists.module';
+import { SearchModule } from './search/search.module';
+
+@Module({
+  imports: [
+    PrismaModule,
+    AuthModule,
+    MailModule,
+    UsersModule,
+    RolesModule,
+    ArtistsModule,
+    ArtistGroupsModule,
+    AlbumsModule,
+    SongsModule,
+    GenresModule,
+    PermissionsModule,
+    PlaylistsModule,
+    SearchModule,
+  ],
+  controllers: [AppController, HealthController, FilesController],
+  providers: [AppService, MinioService],
+})
+export class AppModule {}
