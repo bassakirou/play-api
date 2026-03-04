@@ -27,19 +27,26 @@ export const createNestServer = async () => {
 
     app.enableCors({
       origin: (origin, callback) => {
-        if (
-          !origin ||
+        // Autoriser les requêtes sans origin (comme Postman ou les outils serveurs)
+        if (!origin) return callback(null, true);
+
+        // Vérifier si l'origine est dans la liste ou est un sous-domaine Vercel
+        const isAllowed =
           allowedOrigins.includes(origin) ||
-          origin.endsWith('.vercel.app')
-        ) {
+          origin.endsWith('.vercel.app') ||
+          origin.endsWith('.pyramidplay.cm');
+
+        if (isAllowed) {
           callback(null, true);
         } else {
+          console.error(`CORS Blocked for origin: ${origin}`);
           callback(new Error('Not allowed by CORS'));
         }
       },
       methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
       credentials: true,
       allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
+      exposedHeaders: ['Content-Range', 'X-Content-Range'],
     });
 
     // Configuration Swagger pour Vercel
