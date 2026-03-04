@@ -1,39 +1,35 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, INestApplication } from '@nestjs/common';
 import { ExpressAdapter } from '@nestjs/platform-express';
-import * as express from 'express';
-import { Express } from 'express';
+import express, { Express } from 'express';
 
 const server: Express = express();
+let cachedApp: INestApplication;
 
-export const createNestServer = async (expressInstance: any) => {
+export const createNestServer = async (expressInstance: Express) => {
+  if (cachedApp) return cachedApp;
+
   const app = await NestFactory.create(
     AppModule,
     new ExpressAdapter(expressInstance),
   );
-  
+
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-  
-  // Robust CORS configuration
+
   app.enableCors({
-    origin: (origin, callback) => {
-      // Allow all origins in production, or specify your frontend domains
-      callback(null, true);
-    },
+    origin: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
     allowedHeaders: 'Content-Type, Accept, Authorization',
   });
 
   await app.init();
+  cachedApp = app;
   return app;
 };
 
-// Vercel expects the handler to be exported
-const handler = async (req: any, res: any) => {
+export default async (req: any, res: any) => {
   await createNestServer(server);
-  return server(req, res);
+  server(req, res);
 };
-
-export default handler;
