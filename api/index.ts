@@ -9,17 +9,37 @@ export const createNestServer = async () => {
   if (cachedServer) return cachedServer;
 
   console.log('--- Vercel Initialization Start (Optimized) ---');
-  
+
   try {
     const app = await NestFactory.create(AppModule);
 
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true }),
+    );
+
+    const allowedOrigins = [
+      'https://pyramidplay.cm',
+      'https://www.pyramidplay.cm',
+      'https://admin.pyramidplay.cm',
+      'http://localhost:5173',
+      'http://localhost:5174',
+    ];
 
     app.enableCors({
-      origin: true,
+      origin: (origin, callback) => {
+        if (
+          !origin ||
+          allowedOrigins.includes(origin) ||
+          origin.endsWith('.vercel.app')
+        ) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
       methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
       credentials: true,
-      allowedHeaders: 'Content-Type, Accept, Authorization',
+      allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
     });
 
     // Configuration Swagger pour Vercel
@@ -33,7 +53,7 @@ export const createNestServer = async () => {
     SwaggerModule.setup('api', app, document);
 
     await app.init();
-    
+
     cachedServer = app.getHttpAdapter().getInstance();
     return cachedServer;
   } catch (error) {
