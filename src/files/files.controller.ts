@@ -91,36 +91,34 @@ export class FilesController {
       const objectName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
       try {
         console.log(
-          `[FilesController] Uploading audio to Minio: ${objectName}`,
+          `[FilesController] Attempting audio Minio upload: ${objectName}`,
         );
-        const result = await this.minio.upload({
+        return await this.minio.upload({
           bucket: 'audio',
           objectName,
           buffer: file.buffer,
           contentType: file.mimetype,
         });
-        console.log(
-          `[FilesController] Minio audio upload success: ${result.url}`,
-        );
-        return result;
       } catch (err) {
-        console.error(
-          '[FilesController] Minio audio upload failed:',
-          err.message,
+        console.warn(
+          `[FilesController] Audio Minio upload failed, falling back to local: ${err.message}`,
         );
-        throw new Error(`Audio upload failed: ${err.message}`);
       }
     }
+
+    // Fallback local (Optionnel si Minio échoue ou est désactivé)
     if (!file.filename && file.buffer) {
       const dest = join(process.cwd(), 'uploads', 'audio');
       ensureDir(dest);
       const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
       writeFileSync(join(dest, filename), file.buffer);
-      const url = `/uploads/audio/${filename}`;
-      return { url, filename };
+      return {
+        url: `/uploads/audio/${filename}`,
+        objectName: filename,
+      };
     }
     const url = `/uploads/audio/${file.filename}`;
-    return { url, filename: file.filename };
+    return { url, objectName: file.filename };
   }
 
   @Post('upload-image')
@@ -163,31 +161,33 @@ export class FilesController {
     if (this.minio.isEnabled()) {
       const objectName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
       try {
-        console.log(`[FilesController] Uploading to Minio: ${objectName}`);
-        const result = await this.minio.upload({
+        console.log(`[FilesController] Attempting Minio upload: ${objectName}`);
+        return await this.minio.upload({
           bucket: 'images',
           objectName,
           buffer: file.buffer,
           contentType: file.mimetype,
         });
-        console.log(`[FilesController] Minio upload success: ${result.url}`);
-        return result;
       } catch (err) {
-        console.error('[FilesController] Minio upload failed:', err.message);
-        // On ne fait pas de fallback disque sur Vercel car le FS est en lecture seule
-        throw new Error(`Upload failed: ${err.message}`);
+        console.warn(
+          `[FilesController] Minio upload failed, falling back to local: ${err.message}`,
+        );
       }
     }
+
+    // Fallback local (Optionnel si Minio échoue ou est désactivé)
     if (!file.filename && file.buffer) {
       const dest = join(process.cwd(), 'uploads', 'images');
-      ensureDir(dest);
+      ensureDirSync(dest);
       const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
       writeFileSync(join(dest, filename), file.buffer);
-      const url = `/uploads/images/${filename}`;
-      return { url, filename };
+      return {
+        url: `/uploads/images/${filename}`,
+        objectName: filename,
+      };
     }
     const url = `/uploads/images/${file.filename}`;
-    return { url, filename: file.filename };
+    return { url, objectName: file.filename };
   }
 
   @Get('resolved-audio')
