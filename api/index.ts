@@ -18,53 +18,49 @@ export const createNestServer = async () => {
     app.use(json({ limit: '50mb' }));
     app.use(urlencoded({ limit: '50mb', extended: true }));
 
-    app.useGlobalPipes(
-      new ValidationPipe({ transform: true, whitelist: true }),
-    );
+    // Middleware CORS Manuel (Plus robuste pour Vercel)
+    app.use((req: any, res: any, next: any) => {
+      const origin = req.headers.origin;
+      const allowedOrigins = [
+        'https://pyramidplay.cm',
+        'https://www.pyramidplay.cm',
+        'https://admin.pyramidplay.cm',
+        'https://angara-finance.com',
+        'https://www.angara-finance.com',
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://localhost:3000',
+      ];
 
-    const allowedOrigins = [
-      'https://pyramidplay.cm',
-      'https://www.pyramidplay.cm',
-      'https://admin.pyramidplay.cm',
-      'http://pyramidplay.cm',
-      'http://www.pyramidplay.cm',
-      'http://admin.pyramidplay.cm',
-      'https://angara-finance.com',
-      'http://localhost:5173',
-      'http://localhost:5174',
-    ];
+      const isAllowed =
+        origin &&
+        (allowedOrigins.includes(origin) ||
+          origin.endsWith('.vercel.app') ||
+          origin.endsWith('.pyramidplay.cm') ||
+          origin.endsWith('.angara-finance.com'));
 
-    app.use((req, res, next) => {
-      res.setHeader('Vary', 'Origin');
+      if (isAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader(
+          'Access-Control-Allow-Methods',
+          'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+        );
+        res.setHeader(
+          'Access-Control-Allow-Headers',
+          'Content-Type, Accept, Authorization, X-Requested-With',
+        );
+      }
+
+      if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+      }
       next();
     });
 
-    app.enableCors({
-      origin: (origin, callback) => {
-        // Autoriser les requêtes sans origine (comme Postman ou les outils serveurs)
-        if (!origin) return callback(null, true);
-
-        const isAllowed =
-          allowedOrigins.includes(origin) ||
-          origin.endsWith('.vercel.app') ||
-          origin.endsWith('.pyramidplay.cm') ||
-          origin.endsWith('.angara-finance.com');
-
-        if (isAllowed) {
-          // Renvoyer l'origine exacte pour satisfaire credentials: true
-          callback(null, origin);
-        } else {
-          console.warn(`CORS: Origin ${origin} not allowed by policy`);
-          callback(null, false);
-        }
-      },
-      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-      credentials: true,
-      allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
-      exposedHeaders: ['Content-Range', 'X-Content-Range'],
-      preflightContinue: false,
-      optionsSuccessStatus: 204,
-    });
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true }),
+    );
 
     // Configuration Swagger pour Vercel
     const config = new DocumentBuilder()

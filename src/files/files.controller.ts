@@ -105,13 +105,14 @@ export class FilesController {
   async uploadAudio(@UploadedFile() file?: Express.Multer.File) {
     if (!file) return { error: 'No file' };
 
-    const objectName = `audio/${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
+    const uniqueName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
     const isProduction =
       process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
 
     // 1. En PRODUCTION : Priorité absolue à Vercel Blob
     if (isProduction && this.blob.isEnabled()) {
       try {
+        const objectName = `audio/${uniqueName}`;
         console.log(
           `[FilesController] Production: Uploading audio to Vercel Blob: ${objectName}`,
         );
@@ -133,14 +134,16 @@ export class FilesController {
       try {
         const env = isProduction ? 'Production Fallback' : 'Local';
         console.log(
-          `[FilesController] ${env}: Uploading audio to Minio: ${objectName}`,
+          `[FilesController] ${env}: Uploading audio to Minio: ${uniqueName}`,
         );
-        return await this.minio.upload({
+        const url = await this.minio.upload({
           bucket: 'audio',
-          objectName,
+          objectName: uniqueName, // On enlève le préfixe audio/ ici car le bucket s'appelle déjà audio
           buffer: file.buffer,
           contentType: file.mimetype,
         });
+        // On s'assure de renvoyer un objet JSON { url: "..." }
+        return { url: typeof url === 'string' ? url : (url as any).url || url };
       } catch (err) {
         console.error(`[FilesController] Minio upload failed: ${err.message}`);
       }
@@ -169,13 +172,14 @@ export class FilesController {
   async uploadImage(@UploadedFile() file?: Express.Multer.File) {
     if (!file) return { error: 'No file' };
 
-    const objectName = `images/${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
+    const uniqueName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
     const isProduction =
       process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
 
     // 1. En PRODUCTION : Priorité absolue à Vercel Blob
     if (isProduction && this.blob.isEnabled()) {
       try {
+        const objectName = `images/${uniqueName}`;
         console.log(
           `[FilesController] Production: Uploading image to Vercel Blob: ${objectName}`,
         );
@@ -197,14 +201,16 @@ export class FilesController {
       try {
         const env = isProduction ? 'Production Fallback' : 'Local';
         console.log(
-          `[FilesController] ${env}: Uploading image to Minio: ${objectName}`,
+          `[FilesController] ${env}: Uploading image to Minio: ${uniqueName}`,
         );
-        return await this.minio.upload({
+        const url = await this.minio.upload({
           bucket: 'images',
-          objectName,
+          objectName: uniqueName, // On enlève le préfixe images/ ici car le bucket s'appelle déjà images
           buffer: file.buffer,
           contentType: file.mimetype,
         });
+        // On s'assure de renvoyer un objet JSON { url: "..." }
+        return { url: typeof url === 'string' ? url : (url as any).url || url };
       } catch (err) {
         console.error(
           `[FilesController] Minio Image upload failed: ${err.message}`,
