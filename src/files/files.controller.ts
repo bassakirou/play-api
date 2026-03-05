@@ -246,6 +246,10 @@ export class FilesController {
       return;
     }
     try {
+      if (url.includes('public.blob.vercel-storage.com')) {
+        res.redirect(url);
+        return;
+      }
       if (this.minio.isEnabled()) {
         const match = url.match(/\/audio\/(.+)$/);
         if (match && match[1]) {
@@ -253,7 +257,7 @@ export class FilesController {
           const signed = await this.minio.presignGet({
             bucket: 'audio',
             objectName,
-            contentType: 'audio/mpeg',
+            contentType: 'audio/*',
           });
           res.redirect(signed);
           return;
@@ -263,5 +267,14 @@ export class FilesController {
     } catch {
       res.redirect(url);
     }
+  }
+
+  @Post('blob-token')
+  async getBlobToken(@Query('pathname') pathname: string) {
+    if (!this.blob.isEnabled()) {
+      return { error: 'Vercel Blob is not enabled' };
+    }
+    const token = await this.blob.generateToken(pathname || 'uploads');
+    return { token };
   }
 }

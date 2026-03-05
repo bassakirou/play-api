@@ -73,7 +73,7 @@ export class SongsService {
       artistIds,
       groupIds,
       artistId,
-      isSingle,
+      isSingle: rawIsSingle,
       albumId,
       coverUrl,
       ...rest
@@ -83,21 +83,21 @@ export class SongsService {
       : artistId
         ? [artistId]
         : [];
-    if (typeof isSingle !== 'boolean') {
-      throw new BadRequestException('isSingle is required');
-    }
+
+    // Détermination intelligente de isSingle
+    // Si un albumId est présent, ce n'est PAS un single, peu importe ce que dit le front
+    const isSingle = albumId ? false : (rawIsSingle ?? true);
+
     if (isSingle) {
       if (!coverUrl) {
         throw new BadRequestException('coverUrl is required for singles');
-      }
-      if (albumId) {
-        throw new BadRequestException('Single cannot be linked to an album');
       }
     } else {
       if (!albumId) {
         throw new BadRequestException('albumId is required for album tracks');
       }
     }
+
     const data: any = {
       ...rest,
       isSingle,
@@ -114,34 +114,41 @@ export class SongsService {
   }
 
   update(id: string, updateSongDto: any) {
-    const { artistIds, groupIds, isSingle, albumId, coverUrl, ...rest } =
-      updateSongDto || {};
+    const {
+      artistIds,
+      groupIds,
+      isSingle: rawIsSingle,
+      albumId,
+      coverUrl,
+      ...rest
+    } = updateSongDto || {};
+
     const data: Record<string, any> = { ...rest };
+
+    // Détermination intelligente de isSingle pour la mise à jour
+    let isSingle = rawIsSingle;
+    if (typeof albumId !== 'undefined' && albumId !== null) {
+      isSingle = false;
+    }
+
     if (typeof isSingle === 'boolean') {
       data.isSingle = isSingle;
       if (isSingle) {
-        if (!coverUrl) {
+        if (!coverUrl && typeof coverUrl !== 'undefined') {
           throw new BadRequestException('coverUrl is required for singles');
         }
-        data.coverUrl = coverUrl;
         data.albumId = null;
       } else {
-        if (!albumId) {
-          throw new BadRequestException('albumId is required for album tracks');
+        if (typeof albumId !== 'undefined') {
+          data.albumId = albumId;
         }
-        data.albumId = albumId;
-        if (typeof coverUrl !== 'undefined') {
-          data.coverUrl = coverUrl || null;
-        }
-      }
-    } else {
-      if (typeof albumId !== 'undefined') {
-        data.albumId = albumId;
-      }
-      if (typeof coverUrl !== 'undefined') {
-        data.coverUrl = coverUrl || null;
       }
     }
+
+    if (typeof coverUrl !== 'undefined') {
+      data.coverUrl = coverUrl || null;
+    }
+
     const updateData: any = {
       ...data,
       ...(artistIds

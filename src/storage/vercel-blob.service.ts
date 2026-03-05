@@ -1,10 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { put } from '@vercel/blob';
+import { put, generateClientToken } from '@vercel/blob';
 
 @Injectable()
 export class VercelBlobService {
   isEnabled() {
     return !!process.env.BLOB_READ_WRITE_TOKEN;
+  }
+
+  async generateToken(pathname: string) {
+    if (!this.isEnabled()) {
+      throw new Error('Vercel Blob token is missing');
+    }
+    return generateClientToken({
+      pathname,
+      onUploadCompleted: async (payload) => {
+        console.log('[VercelBlobService] Client upload completed:', payload);
+      },
+    });
   }
 
   async upload(opts: {

@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
 let cachedServer: any;
@@ -12,6 +13,10 @@ export const createNestServer = async () => {
 
   try {
     const app = await NestFactory.create(AppModule);
+
+    // Augmentation de la limite de taille pour les requêtes JSON/Form
+    app.use(json({ limit: '50mb' }));
+    app.use(urlencoded({ limit: '50mb', extended: true }));
 
     app.useGlobalPipes(
       new ValidationPipe({ transform: true, whitelist: true }),
@@ -32,12 +37,13 @@ export const createNestServer = async () => {
     app.enableCors({
       origin: (origin, callback) => {
         if (!origin) return callback(null, true);
-        
-        const isAllowed = allowedOrigins.includes(origin) || 
-                         origin.endsWith('.vercel.app') ||
-                         origin.endsWith('.pyramidplay.cm') ||
-                         origin.endsWith('.angara-finance.com');
-                         
+
+        const isAllowed =
+          allowedOrigins.includes(origin) ||
+          origin.endsWith('.vercel.app') ||
+          origin.endsWith('.pyramidplay.cm') ||
+          origin.endsWith('.angara-finance.com');
+
         if (isAllowed) {
           callback(null, true);
         } else {

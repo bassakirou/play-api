@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Patch,
+  Put,
   Param,
   Delete,
   UseGuards,
@@ -43,6 +44,14 @@ export class SongsController {
   @CheckPermissions('update:song')
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateSongDto: any) {
+    return this.songsService.update(id, updateSongDto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @CheckPermissions('update:song')
+  @Put(':id')
+  updatePut(@Param('id') id: string, @Body() updateSongDto: any) {
     return this.songsService.update(id, updateSongDto);
   }
 
