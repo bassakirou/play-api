@@ -93,11 +93,13 @@ export class FilesController {
   })
   async uploadAudio(@UploadedFile() file?: Express.Multer.File) {
     if (!file) return { error: 'No file' };
+
+    // Tentative d'upload vers Minio (Production VPS KM 4)
     if (this.minio.isEnabled()) {
       const objectName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
       try {
         console.log(
-          `[FilesController] Attempting audio Minio upload: ${objectName}`,
+          `[FilesController] Uploading audio to Minio VPS: ${objectName}`,
         );
         return await this.minio.upload({
           bucket: 'audio',
@@ -106,33 +108,23 @@ export class FilesController {
           contentType: file.mimetype,
         });
       } catch (err) {
-        console.warn(
-          `[FilesController] Audio Minio upload failed, falling back to local: ${err.message}`,
+        console.error(
+          `[FilesController] Minio Audio upload failed: ${err.message}`,
         );
+        throw new Error(`Failed to upload audio to storage: ${err.message}`);
       }
     }
 
-    // Fallback local (Optionnel si Minio échoue ou est désactivé)
+    // Fallback local uniquement pour le développement local
     if (!file.filename && file.buffer) {
-      try {
-        const dest = join(process.cwd(), 'uploads', 'audio');
-        ensureDir(dest);
-        const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
-        writeFileSync(join(dest, filename), file.buffer);
-        return {
-          url: `/uploads/audio/${filename}`,
-          objectName: filename,
-        };
-      } catch (e) {
-        console.error(
-          `[FilesController] Local audio write failed: ${e.message}`,
-        );
-        // Fallback ultime sur Vercel : on renvoie une URL bidon pour éviter le crash 500
-        return {
-          url: 'https://placehold.co/100?text=Audio+Disabled+on+Vercel',
-          objectName: 'audio_placeholder.mp3',
-        };
-      }
+      const dest = join(process.cwd(), 'uploads', 'audio');
+      ensureDir(dest);
+      const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
+      writeFileSync(join(dest, filename), file.buffer);
+      return {
+        url: `/uploads/audio/${filename}`,
+        objectName: filename,
+      };
     }
     const url = `/uploads/audio/${file.filename}`;
     return { url, objectName: file.filename };
@@ -175,10 +167,14 @@ export class FilesController {
   })
   async uploadImage(@UploadedFile() file?: Express.Multer.File) {
     if (!file) return { error: 'No file' };
+
+    // Tentative d'upload vers Minio (Production VPS KM 4)
     if (this.minio.isEnabled()) {
       const objectName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
       try {
-        console.log(`[FilesController] Attempting Minio upload: ${objectName}`);
+        console.log(
+          `[FilesController] Uploading image to Minio VPS: ${objectName}`,
+        );
         return await this.minio.upload({
           bucket: 'images',
           objectName,
@@ -186,32 +182,23 @@ export class FilesController {
           contentType: file.mimetype,
         });
       } catch (err) {
-        console.warn(
-          `[FilesController] Minio upload failed, falling back to local: ${err.message}`,
+        console.error(
+          `[FilesController] Minio Image upload failed: ${err.message}`,
         );
+        throw new Error(`Failed to upload image to storage: ${err.message}`);
       }
     }
 
-    // Fallback local (Optionnel si Minio échoue ou est désactivé)
+    // Fallback local uniquement pour le développement local
     if (!file.filename && file.buffer) {
-      try {
-        const dest = join(process.cwd(), 'uploads', 'images');
-        ensureDir(dest);
-        const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
-        writeFileSync(join(dest, filename), file.buffer);
-        return {
-          url: `/uploads/images/${filename}`,
-          objectName: filename,
-        };
-      } catch (e) {
-        console.error(
-          `[FilesController] Local image write failed: ${e.message}`,
-        );
-        return {
-          url: 'https://placehold.co/600x400?text=Image+Disabled+on+Vercel',
-          objectName: 'image_placeholder.png',
-        };
-      }
+      const dest = join(process.cwd(), 'uploads', 'images');
+      ensureDir(dest);
+      const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
+      writeFileSync(join(dest, filename), file.buffer);
+      return {
+        url: `/uploads/images/${filename}`,
+        objectName: filename,
+      };
     }
     const url = `/uploads/images/${file.filename}`;
     return { url, objectName: file.filename };
