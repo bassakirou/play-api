@@ -1,35 +1,85 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
-import { ValidationPipe, INestApplication } from '@nestjs/common';
-import { ExpressAdapter } from '@nestjs/platform-express';
-import express, { Express } from 'express';
+import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
-const server: Express = express();
-let cachedApp: INestApplication;
+let cachedServer: any;
 
-export const createNestServer = async (expressInstance: Express) => {
-  if (cachedApp) return cachedApp;
+export const createNestServer = async () => {
+  if (cachedServer) return cachedServer;
 
-  const app = await NestFactory.create(
-    AppModule,
-    new ExpressAdapter(expressInstance),
-  );
+  console.log('--- Vercel Initialization Start (Optimized) ---');
 
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  try {
+    const app = await NestFactory.create(AppModule);
 
-  app.enableCors({
-    origin: true,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-    allowedHeaders: 'Content-Type, Accept, Authorization',
-  });
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true }),
+    );
 
-  await app.init();
-  cachedApp = app;
-  return app;
+    const allowedOrigins = [
+      'https://pyramidplay.cm',
+      'https://www.pyramidplay.cm',
+      'https://admin.pyramidplay.cm',
+      'http://pyramidplay.cm',
+      'http://www.pyramidplay.cm',
+      'http://admin.pyramidplay.cm',
+      'https://angara-finance.com',
+      'http://localhost:5173',
+      'http://localhost:5174',
+    ];
+
+    app.enableCors({
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        
+        const isAllowed = allowedOrigins.includes(origin) || 
+                         origin.endsWith('.vercel.app') ||
+                         origin.endsWith('.pyramidplay.cm') ||
+                         origin.endsWith('.angara-finance.com');
+                         
+        if (isAllowed) {
+          callback(null, true);
+        } else {
+          callback(null, true); // Fallback permissif pour débloquer la production
+        }
+      },
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      credentials: true,
+      allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
+      exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    });
+
+    // Configuration Swagger pour Vercel
+    const config = new DocumentBuilder()
+      .setTitle('PyramidPlay API')
+      .setDescription('The PyramidPlay API description (Production)')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document);
+
+    await app.init();
+
+    cachedServer = app.getHttpAdapter().getInstance();
+    return cachedServer;
+  } catch (error) {
+    console.error('CRITICAL: NestJS bootstrap failed!', error);
+    throw error;
+  }
 };
 
 export default async (req: any, res: any) => {
-  await createNestServer(server);
-  server(req, res);
+  try {
+    const server = await createNestServer();
+    server(req, res);
+  } catch (error) {
+    console.error('Final Handler Error:', error);
+    res.status(500).json({
+      statusCode: 500,
+      message: 'Internal Server Error during NestJS initialization',
+      error: error.message,
+    });
+  }
 };

@@ -1,95 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
-}
-
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String
-  
-  // Relations
-  roleId    String
-  role      Role     @relation(fields: [roleId], references: [id])
-  
-  artistProfile Artist?
-  managedArtists Artist[] @relation("LabelArtists")
-  
-  createdGenres Genre[]
-  playlists     Playlist[]
-  
-  favorites     Song[]   @relation("UserFavorites")
-  
-  // Follow system
-  followingArtists Artist[] @relation("UserFollowsArtist")
-  
+  id               String     @id @default(uuid())
+  email            String     @unique
+  password         String
+  name             String
+  roleId           String
   resetToken       String?
   resetTokenExpiry DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  managedArtists   Artist[]   @relation("LabelArtists")
+  artistProfile    Artist?
+  createdGenres    Genre[]
+  playlists        Playlist[]
+  role             Role       @relation(fields: [roleId], references: [id])
+  favorites        Song[]     @relation("UserFavorites")
+  followingArtists Artist[]   @relation("UserFollowsArtist")
 }
 
 model Role {
   id          String       @id @default(uuid())
-  name        String       @unique // ADMIN, CREATOR, LABEL, USER
-  permissions Permission[]
+  name        String       @unique
   users       User[]
+  permissions Permission[] @relation("PermissionToRole")
 }
 
 model Permission {
-  id          String @id @default(uuid())
-  action      String // create, read, update, delete, manage
-  resource    String // song, album, user, role, genre, artist
-  roles       Role[]
+  id       String @id @default(uuid())
+  action   String
+  resource String
+  roles    Role[] @relation("PermissionToRole")
 }
 
 model Artist {
-  id        String  @id @default(uuid())
+  id        String        @id @default(uuid())
   name      String
   bio       String?
   imageUrl  String?
   bannerUrl String?
-  gallery   String? // JSON string array of URLs
-  certified Boolean @default(false)
-  
-  // Additional info for CREATOR role
+  gallery   String?
+  certified Boolean       @default(false)
   birthDate DateTime?
   country   String?
-  gender    String? // MALE, FEMALE, OTHER
-  
-  // If Independent Creator, link to User
-  userId    String? @unique
-  user      User?   @relation(fields: [userId], references: [id])
-  
-  // If Managed by Label, link to Label User
+  gender    String?
+  userId    String?       @unique
   labelId   String?
-  label     User?   @relation("LabelArtists", fields: [labelId], references: [id])
-  
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
   albums    Album[]
-  songs     Song[]  @relation("SongArtists")
+  label     User?         @relation("LabelArtists", fields: [labelId], references: [id])
+  user      User?         @relation(fields: [userId], references: [id])
   groups    ArtistGroup[] @relation("ArtistGroupMembers")
-  
-  // Follow system
-  followers User[]  @relation("UserFollowsArtist")
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  songs     Song[]        @relation("SongArtists")
+  followers User[]        @relation("UserFollowsArtist")
 }
 
 model ArtistGroup {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   name      String
-  members   Artist[] @relation("ArtistGroupMembers")
-  songs     Song[]   @relation("SongGroups")
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  members   Artist[] @relation("ArtistGroupMembers")
+  songs     Song[]   @relation("SongGroups")
 }
 
 model Album {
@@ -98,66 +78,50 @@ model Album {
   year        Int
   coverUrl    String?
   description String?
-  
   artistId    String
-  artist      Artist   @relation(fields: [artistId], references: [id])
-  
-  songs       Song[]
-  
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  artist      Artist   @relation(fields: [artistId], references: [id])
+  songs       Song[]
 }
 
 model Song {
-  id        String   @id @default(uuid())
-  title     String
-  duration  Int      // Seconds
-  coverUrl  String?
-  isSingle  Boolean  @default(false)
-  audioUrl  String
-
-  artists   Artist[] @relation("SongArtists")
-  groups    ArtistGroup[] @relation("SongGroups")
-
-  albumId   String?
-  album     Album?   @relation(fields: [albumId], references: [id])
-
-  genreId   String
-  genre     Genre    @relation(fields: [genreId], references: [id])
-  
-  playlists Playlist[] @relation("PlaylistSongs")
-  
-  favoritedBy User[]   @relation("UserFavorites")
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String        @id @default(uuid())
+  title       String
+  duration    Int
+  coverUrl    String?
+  isSingle    Boolean       @default(false)
+  audioUrl    String
+  albumId     String?
+  genreId     String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  album       Album?        @relation(fields: [albumId], references: [id])
+  genre       Genre         @relation(fields: [genreId], references: [id])
+  playlists   Playlist[]    @relation("PlaylistSongs")
+  artists     Artist[]      @relation("SongArtists")
+  groups      ArtistGroup[] @relation("SongGroups")
+  favoritedBy User[]        @relation("UserFavorites")
 }
 
 model Genre {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  
+  id          String   @id @default(uuid())
+  name        String   @unique
   createdById String?
-  createdBy   User?   @relation(fields: [createdById], references: [id])
-  
-  isSystem  Boolean  @default(false) // Admin created
-  
-  songs     Song[]
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  songs       Song[]
 }
 
 model Playlist {
   id        String   @id @default(uuid())
   name      String
   coverUrl  String?
-  
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  
-  songs     Song[]   @relation("PlaylistSongs")
-  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+  songs     Song[]   @relation("PlaylistSongs")
 }

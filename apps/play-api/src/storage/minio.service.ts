@@ -52,9 +52,18 @@ export class MinioService {
 
   async ensureBucket(name: string) {
     if (!this.client) return;
-    const exists = await this.client.bucketExists(name).catch(() => false);
-    if (!exists) {
-      await this.client.makeBucket(name).catch(() => undefined);
+    try {
+      const exists = await this.client.bucketExists(name);
+      if (!exists) {
+        console.log(`[MinioService] Creating bucket: ${name}`);
+        await this.client.makeBucket(name, 'us-east-1'); // Region is often needed
+      }
+    } catch (error) {
+      console.error(
+        `[MinioService] Error ensuring bucket ${name}:`,
+        error.message,
+      );
+      // We don't throw here to allow the upload to attempt, but it's a red flag
     }
   }
 
@@ -70,15 +79,26 @@ export class MinioService {
     const bucketName =
       (this.cfg.buckets?.[opts.bucket] as string) || opts.bucket;
     await this.ensureBucket(bucketName);
-    await this.client.putObject(
-      bucketName,
-      opts.objectName,
-      opts.buffer,
-      opts.buffer.length,
-      {
-        'Content-Type': opts.contentType || 'application/octet-stream',
-      },
-    );
+    try {
+      await this.client.putObject(
+        bucketName,
+        opts.objectName,
+        opts.buffer,
+        opts.buffer.length,
+        {
+          'Content-Type': opts.contentType || 'application/octet-stream',
+        },
+      );
+      console.log(`[MinioService] Upload successful: ${opts.objectName}`);
+    } catch (error) {
+      console.error(`[MinioService] CRITICAL UPLOAD ERROR:`, {
+        message: error.message,
+        code: error.code,
+        bucket: bucketName,
+        endpoint: process.env.MINIO_ENDPOINT,
+      });
+      throw error;
+    }
     return this.presignGet({
       bucket: opts.bucket,
       objectName: opts.objectName,

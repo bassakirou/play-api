@@ -11,7 +11,7 @@ import { GenresModule } from './genres/genres.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { HealthController } from './health.controller';
 import { FilesController } from './files/files.controller';
-import { MinioService } from './storage/minio.service';
+import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './auth/auth.module';
 import { ArtistGroupsModule } from './artist-groups/artist-groups.module';
 import { MailModule } from './mail/mail.module';
@@ -21,6 +21,7 @@ import { SearchModule } from './search/search.module';
 @Module({
   imports: [
     PrismaModule,
+    StorageModule,
     AuthModule,
     MailModule,
     UsersModule,
@@ -35,6 +36,6 @@ import { SearchModule } from './search/search.module';
     SearchModule,
   ],
   controllers: [AppController, HealthController, FilesController],
-  providers: [AppService, MinioService],
+  providers: [AppService],
 })
 export class AppModule {}
