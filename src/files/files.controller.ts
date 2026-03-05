@@ -14,6 +14,7 @@ import { extname, join } from 'path';
 import { randomBytes } from 'crypto';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { MinioService } from '../storage/minio.service';
+import { VercelBlobService } from '../storage/vercel-blob.service';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 
 function ensureDir(path: string) {
@@ -45,7 +46,10 @@ function diskAudioStorage() {
 @ApiTags('files')
 @Controller('files')
 export class FilesController {
-  constructor(private readonly minio: MinioService) {}
+  constructor(
+    private readonly minio: MinioService,
+    private readonly blob: VercelBlobService,
+  ) {}
 
   @Get('resolved-image')
   async resolvedImage(@Query('url') url: string, @Res() res: any) {
@@ -54,6 +58,12 @@ export class FilesController {
       return;
     }
     try {
+      // Priorité à Vercel Blob (les URLs sont déjà directes, donc on retourne tel quel)
+      if (url.includes('public.blob.vercel-storage.com')) {
+        res.redirect(url);
+        return;
+      }
+
       if (this.minio.isEnabled()) {
         const match = url.match(/\/images\/(.+)$/);
         if (match && match[1]) {
@@ -72,11 +82,12 @@ export class FilesController {
       res.redirect(url);
     }
   }
+
   @Post('upload-audio')
   @UseInterceptors(
     FileInterceptor(
       'file',
-      process.env.MINIO_ENDPOINT
+      process.env.BLOB_READ_WRITE_TOKEN || process.env.MINIO_ENDPOINT
         ? { storage: memoryStorage(), limits: { fileSize: 1024 * 1024 * 100 } }
         : {
             storage: diskAudioStorage(),
@@ -94,12 +105,35 @@ export class FilesController {
   async uploadAudio(@UploadedFile() file?: Express.Multer.File) {
     if (!file) return { error: 'No file' };
 
-    // Tentative d'upload vers Minio (Production VPS KM 4)
-    if (this.minio.isEnabled()) {
-      const objectName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
+    const objectName = `audio/${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
+    const isProduction =
+      process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
+    // 1. En PRODUCTION : Priorité absolue à Vercel Blob
+    if (isProduction && this.blob.isEnabled()) {
       try {
         console.log(
-          `[FilesController] Uploading audio to Minio VPS: ${objectName}`,
+          `[FilesController] Production: Uploading audio to Vercel Blob: ${objectName}`,
+        );
+        const url = await this.blob.upload({
+          objectName,
+          buffer: file.buffer,
+          contentType: file.mimetype,
+        });
+        return { url };
+      } catch (err) {
+        console.error(
+          `[FilesController] Vercel Blob upload failed: ${err.message}`,
+        );
+      }
+    }
+
+    // 2. En LOCAL (ou fallback production) : Utilisation de Minio
+    if (this.minio.isEnabled()) {
+      try {
+        const env = isProduction ? 'Production Fallback' : 'Local';
+        console.log(
+          `[FilesController] ${env}: Uploading audio to Minio: ${objectName}`,
         );
         return await this.minio.upload({
           bucket: 'audio',
@@ -108,56 +142,23 @@ export class FilesController {
           contentType: file.mimetype,
         });
       } catch (err) {
-        console.error(
-          `[FilesController] Minio Audio upload failed: ${err.message}`,
-        );
-        throw new Error(`Failed to upload audio to storage: ${err.message}`);
+        console.error(`[FilesController] Minio upload failed: ${err.message}`);
       }
     }
 
-    // Fallback local uniquement pour le développement local
-    if (!file.filename && file.buffer) {
-      const dest = join(process.cwd(), 'uploads', 'audio');
-      ensureDir(dest);
-      const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
-      writeFileSync(join(dest, filename), file.buffer);
+    // 3. Fallback Local (disque)
+    if (file.filename) {
       return {
-        url: `/uploads/audio/${filename}`,
-        objectName: filename,
+        url: `/uploads/audio/${file.filename}`,
+        objectName: file.filename,
       };
     }
-    const url = `/uploads/audio/${file.filename}`;
-    return { url, objectName: file.filename };
+
+    throw new Error('All upload storage attempts failed');
   }
 
   @Post('upload-image')
-  @UseInterceptors(
-    FileInterceptor(
-      'file',
-      process.env.MINIO_ENDPOINT
-        ? {
-            storage: memoryStorage(),
-            limits: { fileSize: 1024 * 1024 * 20 },
-          }
-        : {
-            storage: diskStorage({
-              destination: (_req, _file, cb) => {
-                const dest = join(process.cwd(), 'uploads', 'images');
-                ensureDir(dest);
-                cb(null, dest);
-              },
-              filename: (_req, file, cb) => {
-                const unique = randomBytes(8).toString('hex');
-                cb(
-                  null,
-                  `${Date.now()}-${unique}${extname(file.originalname)}`,
-                );
-              },
-            }),
-            limits: { fileSize: 1024 * 1024 * 20 },
-          },
-    ),
-  )
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -168,12 +169,35 @@ export class FilesController {
   async uploadImage(@UploadedFile() file?: Express.Multer.File) {
     if (!file) return { error: 'No file' };
 
-    // Tentative d'upload vers Minio (Production VPS KM 4)
-    if (this.minio.isEnabled()) {
-      const objectName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
+    const objectName = `images/${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
+    const isProduction =
+      process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
+    // 1. En PRODUCTION : Priorité absolue à Vercel Blob
+    if (isProduction && this.blob.isEnabled()) {
       try {
         console.log(
-          `[FilesController] Uploading image to Minio VPS: ${objectName}`,
+          `[FilesController] Production: Uploading image to Vercel Blob: ${objectName}`,
+        );
+        const url = await this.blob.upload({
+          objectName,
+          buffer: file.buffer,
+          contentType: file.mimetype,
+        });
+        return { url };
+      } catch (err) {
+        console.error(
+          `[FilesController] Vercel Blob Image upload failed: ${err.message}`,
+        );
+      }
+    }
+
+    // 2. En LOCAL (ou fallback production) : Utilisation de Minio
+    if (this.minio.isEnabled()) {
+      try {
+        const env = isProduction ? 'Production Fallback' : 'Local';
+        console.log(
+          `[FilesController] ${env}: Uploading image to Minio: ${objectName}`,
         );
         return await this.minio.upload({
           bucket: 'images',
@@ -185,23 +209,34 @@ export class FilesController {
         console.error(
           `[FilesController] Minio Image upload failed: ${err.message}`,
         );
-        throw new Error(`Failed to upload image to storage: ${err.message}`);
       }
     }
 
-    // Fallback local uniquement pour le développement local
-    if (!file.filename && file.buffer) {
-      const dest = join(process.cwd(), 'uploads', 'images');
-      ensureDir(dest);
-      const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
-      writeFileSync(join(dest, filename), file.buffer);
+    // 3. Fallback disque local
+    try {
+      if (!file.filename && file.buffer) {
+        const dest = join(process.cwd(), 'uploads', 'images');
+        ensureDir(dest);
+        const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
+        writeFileSync(join(dest, filename), file.buffer);
+        return {
+          url: `/uploads/images/${filename}`,
+          objectName: filename,
+        };
+      }
+      if (file.filename) {
+        return {
+          url: `/uploads/images/${file.filename}`,
+          objectName: file.filename,
+        };
+      }
+      throw new Error('No local file data available');
+    } catch (err) {
+      console.error(`[FilesController] Local fallback failed: ${err.message}`);
       return {
-        url: `/uploads/images/${filename}`,
-        objectName: filename,
+        url: 'https://placehold.co/400x400?text=Upload+Failed+Check+Logs',
       };
     }
-    const url = `/uploads/images/${file.filename}`;
-    return { url, objectName: file.filename };
   }
 
   @Get('resolved-audio')
