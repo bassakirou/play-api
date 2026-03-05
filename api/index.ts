@@ -34,8 +34,14 @@ export const createNestServer = async () => {
       'http://localhost:5174',
     ];
 
+    app.use((req, res, next) => {
+      res.setHeader('Vary', 'Origin');
+      next();
+    });
+
     app.enableCors({
       origin: (origin, callback) => {
+        // Autoriser les requêtes sans origine (comme Postman ou les outils serveurs)
         if (!origin) return callback(null, true);
 
         const isAllowed =
@@ -45,15 +51,19 @@ export const createNestServer = async () => {
           origin.endsWith('.angara-finance.com');
 
         if (isAllowed) {
-          callback(null, true);
+          // Renvoyer l'origine exacte pour satisfaire credentials: true
+          callback(null, origin);
         } else {
-          callback(null, true); // Fallback permissif pour débloquer la production
+          console.warn(`CORS: Origin ${origin} not allowed by policy`);
+          callback(null, false);
         }
       },
       methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
       credentials: true,
       allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
       exposedHeaders: ['Content-Range', 'X-Content-Range'],
+      preflightContinue: false,
+      optionsSuccessStatus: 204,
     });
 
     // Configuration Swagger pour Vercel
