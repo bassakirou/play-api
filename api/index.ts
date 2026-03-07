@@ -18,10 +18,9 @@ export const createNestServer = async () => {
     app.use(json({ limit: '50mb' }));
     app.use(urlencoded({ limit: '50mb', extended: true }));
 
-    // Middleware CORS Manuel (Plus robuste pour Vercel)
-    app.use((req: any, res: any, next: any) => {
-      const origin = req.headers.origin;
-      const allowedOrigins = [
+    // Configuration CORS via NestJS
+    app.enableCors({
+      origin: [
         'https://pyramidplay.cm',
         'https://www.pyramidplay.cm',
         'https://admin.pyramidplay.cm',
@@ -30,32 +29,13 @@ export const createNestServer = async () => {
         'http://localhost:5173',
         'http://localhost:5174',
         'http://localhost:3000',
-      ];
-
-      const isAllowed =
-        origin &&
-        (allowedOrigins.includes(origin) ||
-          origin.endsWith('.vercel.app') ||
-          origin.endsWith('.pyramidplay.cm') ||
-          origin.endsWith('.angara-finance.com'));
-
-      if (isAllowed) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader(
-          'Access-Control-Allow-Methods',
-          'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-        );
-        res.setHeader(
-          'Access-Control-Allow-Headers',
-          'Content-Type, Accept, Authorization, X-Requested-With',
-        );
-      }
-
-      if (req.method === 'OPTIONS') {
-        return res.sendStatus(204);
-      }
-      next();
+        /\.vercel\.app$/,
+        /\.pyramidplay\.cm$/,
+        /\.angara-finance\.com$/,
+      ],
+      credentials: true,
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
     });
 
     app.useGlobalPipes(
