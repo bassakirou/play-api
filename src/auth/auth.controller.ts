@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   HttpCode,
   HttpStatus,
@@ -42,6 +43,11 @@ export class AuthController {
   @Post('setup')
   setup(@Body() createUserDto: CreateUserDto) {
     return this.authService.setupFirstAdmin(createUserDto);
+  }
+
+  @Get('setup-status')
+  getSetupStatus() {
+    return this.authService.checkSetupStatus();
   }
 
   @ApiBearerAuth()

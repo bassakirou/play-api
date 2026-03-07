@@ -130,6 +130,11 @@ export class AuthService {
     };
   }
 
+  async checkSetupStatus() {
+    const users = await this.usersService.findAll();
+    return { isSetup: users.length > 0 };
+  }
+
   async changePassword(userId: string, currentPass: string, newPass: string) {
     const user = await this.usersService.findOne(userId);
     if (!user || !(await bcrypt.compare(currentPass, user.password))) {
