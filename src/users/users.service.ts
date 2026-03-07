@@ -93,10 +93,30 @@ export class UsersService {
     });
   }
 
-  update(id: string, updateUserDto: UpdateUserDto) {
+  async update(id: string, updateUserDto: UpdateUserDto) {
+    const { role: roleName, ...data } = updateUserDto;
+
+    if (roleName) {
+      let role = await this.prisma.role.findUnique({
+        where: { name: roleName.toUpperCase() },
+      });
+      if (!role) {
+        role = await this.prisma.role.create({
+          data: { name: roleName.toUpperCase() },
+        });
+      }
+      return this.prisma.user.update({
+        where: { id },
+        data: {
+          ...data,
+          role: { connect: { id: role.id } },
+        },
+      });
+    }
+
     return this.prisma.user.update({
       where: { id },
-      data: updateUserDto,
+      data,
     });
   }
 
