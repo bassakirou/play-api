@@ -10,8 +10,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "vercel-build": "prisma generate && prisma db push --accept-data-loss && prisma db seed",
-    "postinstall": "prisma generate && prisma db push --accept-data-loss && prisma db seed",
+    "vercel-build": "prisma generate && prisma db push --accept-data-loss",
+    "postinstall": "prisma generate && prisma db push --accept-data-loss",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "node -r ts-node/register/transpile-only -r tsconfig-paths/register src/main.ts",
     "start:dev": "node -r ts-node/register/transpile-only -r tsconfig-paths/register src/main.ts",
