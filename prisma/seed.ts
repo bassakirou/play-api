@@ -99,6 +99,79 @@ async function main() {
     }
   }
 
+  const [albumCount, songCount] = await Promise.all([
+    prisma.album.count(),
+    prisma.song.count(),
+  ]);
+
+  if (albumCount === 0 || songCount < 5) {
+    console.log('Fallback: generating minimal demo dataset...');
+
+    const frontBase =
+      process.env.FRONT_ASSET_BASE_URL || 'http://localhost:5174';
+    const coverUrls = [
+      `${frontBase}/thumbnails/eyango.webp`,
+      `${frontBase}/thumbnails/jovi.webp`,
+      `${frontBase}/thumbnails/locko.webp`,
+      `${frontBase}/thumbnails/reniss.webp`,
+    ];
+    const audioUrls = [
+      `${frontBase}/music/Blanche_Bailly.mp3`,
+      `${frontBase}/music/KRYS_M.mp3`,
+      `${frontBase}/music/Magasco.mp3`,
+      `${frontBase}/music/Mentalite_Africaine.mp3`,
+      `${frontBase}/music/NDUTU.mp3`,
+      `${frontBase}/music/Tourbillon.mp3`,
+    ];
+
+    let genres = await prisma.genre.findMany({ take: 5 });
+    if (genres.length === 0) {
+      const genreNames = ['Afro', 'Pop', 'Rap', 'Gospel', 'Makossa'];
+      for (const name of genreNames) {
+        await prisma.genre.create({ data: { name, isSystem: true } });
+      }
+      genres = await prisma.genre.findMany({ take: 5 });
+    }
+
+    const artistNames = [
+      'Pyramid Artist 1',
+      'Pyramid Artist 2',
+      'Pyramid Artist 3',
+    ];
+    const artists: Array<{ id: string }> = [];
+    for (const name of artistNames) {
+      const created = await prisma.artist.create({ data: { name } });
+      artists.push({ id: created.id });
+    }
+
+    for (let i = 0; i < artists.length; i++) {
+      const artist = artists[i];
+      const album = await prisma.album.create({
+        data: {
+          title: `Album ${i + 1}`,
+          year: 2025,
+          coverUrl: coverUrls[i % coverUrls.length],
+          artistId: artist.id,
+        },
+      });
+
+      for (let s = 0; s < 6; s++) {
+        const genre = genres[(i + s) % genres.length];
+        await prisma.song.create({
+          data: {
+            title: `Titre ${i + 1}-${s + 1}`,
+            duration: 180 + s * 10,
+            coverUrl: coverUrls[(i + s) % coverUrls.length],
+            audioUrl: audioUrls[(i + s) % audioUrls.length],
+            albumId: album.id,
+            genreId: genre.id,
+            artists: { connect: [{ id: artist.id }] },
+          },
+        });
+      }
+    }
+  }
+
   console.log('--- Database Synchronization Successful! ---');
 }
 
