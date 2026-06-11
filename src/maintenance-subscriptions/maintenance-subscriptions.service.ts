@@ -144,11 +144,31 @@ export class MaintenanceSubscriptionsService {
       }
     }
 
+    const subscriptions = await this.prisma.maintenanceSubscription.findMany({
+      select: { notifiedAt: true },
+    });
+    const stats = this.buildStats(subscriptions);
+
+    try {
+      await this.mailService.sendMaintenanceNotificationBatchAdminAlert({
+        sent,
+        failed: failures.length,
+        failures,
+        ...stats,
+      });
+    } catch (error) {
+      this.logger.error(
+        'Failed to send maintenance batch admin alert',
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+
     return {
       success: failures.length === 0,
       sent,
       failed: failures.length,
       failures,
+      stats,
       message:
         failures.length === 0
           ? 'Les alertes ont ete envoyees avec succes.'

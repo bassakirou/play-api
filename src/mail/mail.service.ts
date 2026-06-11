@@ -120,4 +120,47 @@ export class MailService {
 
     return { skipped: false, recipients };
   }
+
+  async sendMaintenanceNotificationBatchAdminAlert(params: {
+    sent: number;
+    failed: number;
+    failures: string[];
+    total: number;
+    pending: number;
+    notified: number;
+  }) {
+    const recipients = this.getMaintenanceAlertRecipients();
+
+    if (recipients.length === 0) {
+      return { skipped: true };
+    }
+
+    const failureList =
+      params.failures.length > 0
+        ? `<p><strong>E-mails en echec:</strong> ${params.failures.join(', ')}</p>`
+        : '';
+
+    await this.transporter.sendMail({
+      from: this.getFromAddress(),
+      to: recipients.join(', '),
+      subject: `Recap alertes maintenance: ${params.sent} e-mail(s) notifie(s)`,
+      html: `
+        <h1>Recapitulatif d envoi des alertes maintenance</h1>
+        <p>La campagne d envoi des alertes de disponibilite vient de se terminer.</p>
+        <ul>
+          <li><strong>E-mails effectivement notifies:</strong> ${params.sent}</li>
+          <li><strong>E-mails en echec:</strong> ${params.failed}</li>
+        </ul>
+        ${failureList}
+        <h2>Statistiques apres envoi</h2>
+        <ul>
+          <li><strong>Total inscrits:</strong> ${params.total}</li>
+          <li><strong>Alertes en attente:</strong> ${params.pending}</li>
+          <li><strong>Alertes envoyees:</strong> ${params.notified}</li>
+        </ul>
+      `,
+    });
+
+    return { skipped: false, recipients };
+  }
 }
