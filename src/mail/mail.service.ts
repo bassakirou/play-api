@@ -28,12 +28,29 @@ export class MailService {
     });
   }
 
+  private getFromAddress() {
+    return (
+      this.configService.get<string>('SMTP_FROM') ||
+      '"PyramidPlay Support" <support@pyramidplay.com>'
+    );
+  }
+
+  private getMaintenanceAlertRecipients() {
+    const configured =
+      this.configService.get<string>('MAINTENANCE_ALERT_EMAILS') ||
+      this.configService.get<string>('SMTP_USER') ||
+      '';
+
+    return configured
+      .split(',')
+      .map((email) => email.trim())
+      .filter(Boolean);
+  }
+
   async sendResetPasswordEmail(to: string, token: string) {
     const appUrl =
       this.configService.get<string>('APP_WEB_URL') || 'http://localhost:5173';
-    const from =
-      this.configService.get<string>('SMTP_FROM') ||
-      '"PyramidPlay Support" <support@pyramidplay.com>';
+    const from = this.getFromAddress();
     const resetLink = `${appUrl.replace(/\/+$/, '')}/reset-password?token=${token}`;
 
     await this.transporter.sendMail({
@@ -52,9 +69,7 @@ export class MailService {
   }
 
   async sendPlatformAvailableEmail(to: string, platformUrl: string) {
-    const from =
-      this.configService.get<string>('SMTP_FROM') ||
-      '"PyramidPlay Support" <support@pyramidplay.com>';
+    const from = this.getFromAddress();
 
     await this.transporter.sendMail({
       from,
@@ -68,5 +83,41 @@ export class MailService {
         <p>Merci pour votre patience.</p>
       `,
     });
+  }
+
+  async sendMaintenanceSubscriptionAdminAlert(params: {
+    subscriberEmail: string;
+    total: number;
+    pending: number;
+    notified: number;
+    subscribedAt: Date;
+  }) {
+    const recipients = this.getMaintenanceAlertRecipients();
+
+    if (recipients.length === 0) {
+      return { skipped: true };
+    }
+
+    await this.transporter.sendMail({
+      from: this.getFromAddress(),
+      to: recipients.join(', '),
+      subject: `Nouvelle inscription maintenance: ${params.subscriberEmail}`,
+      html: `
+        <h1>Nouvelle inscription maintenance</h1>
+        <p>Un nouvel utilisateur s est inscrit pour recevoir l alerte de disponibilite.</p>
+        <ul>
+          <li><strong>E-mail inscrit:</strong> ${params.subscriberEmail}</li>
+          <li><strong>Date d inscription:</strong> ${params.subscribedAt.toISOString()}</li>
+        </ul>
+        <h2>Statistiques actuelles</h2>
+        <ul>
+          <li><strong>Total inscrits:</strong> ${params.total}</li>
+          <li><strong>Alertes en attente:</strong> ${params.pending}</li>
+          <li><strong>Alertes envoyees:</strong> ${params.notified}</li>
+        </ul>
+      `,
+    });
+
+    return { skipped: false, recipients };
   }
 }

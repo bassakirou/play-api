@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -7,6 +7,8 @@ import { UpdateMaintenanceStateDto } from './dto/update-maintenance-state.dto';
 
 @Injectable()
 export class MaintenanceSubscriptionsService {
+  private readonly logger = new Logger(MaintenanceSubscriptionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
@@ -15,6 +17,14 @@ export class MaintenanceSubscriptionsService {
 
   private normalizeEmail(email: string) {
     return email.trim().toLowerCase();
+  }
+
+  private buildStats(items: Array<{ notifiedAt: Date | null }>) {
+    return {
+      total: items.length,
+      pending: items.filter((item) => !item.notifiedAt).length,
+      notified: items.filter((item) => item.notifiedAt).length,
+    };
   }
 
   async getState() {
@@ -58,10 +68,29 @@ export class MaintenanceSubscriptionsService {
       data: { email },
     });
 
+    const subscriptions = await this.prisma.maintenanceSubscription.findMany({
+      select: { notifiedAt: true },
+    });
+    const stats = this.buildStats(subscriptions);
+
+    try {
+      await this.mailService.sendMaintenanceSubscriptionAdminAlert({
+        subscriberEmail: subscription.email,
+        subscribedAt: subscription.createdAt,
+        ...stats,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to send maintenance admin alert for ${subscription.email}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+
     return {
       success: true,
       alreadySubscribed: false,
       subscription,
+      stats,
     };
   }
 
@@ -72,11 +101,7 @@ export class MaintenanceSubscriptionsService {
 
     return {
       items: subscriptions,
-      stats: {
-        total: subscriptions.length,
-        pending: subscriptions.filter((item) => !item.notifiedAt).length,
-        notified: subscriptions.filter((item) => item.notifiedAt).length,
-      },
+      stats: this.buildStats(subscriptions),
     };
   }
 
