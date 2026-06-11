@@ -17,6 +17,7 @@ import { ArtistGroupsModule } from './artist-groups/artist-groups.module';
 import { MailModule } from './mail/mail.module';
 import { PlaylistsModule } from './playlists/playlists.module';
 import { SearchModule } from './search/search.module';
+import { MaintenanceSubscriptionsModule } from './maintenance-subscriptions/maintenance-subscriptions.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SearchModule } from './search/search.module';
     PermissionsModule,
     PlaylistsModule,
     SearchModule,
+    MaintenanceSubscriptionsModule,
   ],
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],

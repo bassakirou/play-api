@@ -48,4 +48,23 @@ export class MailService {
       `,
     });
   }
+
+  async sendPlatformAvailableEmail(to: string, platformUrl: string) {
+    const from =
+      this.configService.get<string>('SMTP_FROM') ||
+      '"PyramidPlay Support" <support@pyramidplay.com>';
+
+    await this.transporter.sendMail({
+      from,
+      to,
+      subject: 'Pyramid Play est de nouveau disponible',
+      html: `
+        <h1>Pyramid Play est de retour</h1>
+        <p>Bonne nouvelle, la plateforme est de nouveau disponible.</p>
+        <p>Vous pouvez y acceder des maintenant en cliquant sur le lien ci-dessous :</p>
+        <p><a href="${platformUrl}">Acceder a Pyramid Play</a></p>
+        <p>Merci pour votre patience.</p>
+      `,
+    });
+  }
 }

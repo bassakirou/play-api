@@ -125,3 +125,17 @@ model Playlist {
   user      User     @relation(fields: [userId], references: [id])
   songs     Song[]   @relation("PlaylistSongs")
 }
+
+model MaintenanceSubscription {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  notifiedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model MaintenanceState {
+  id        String   @id @default("default")
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}
