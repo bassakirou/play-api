@@ -15,7 +15,7 @@ async function bootstrap() {
   if (!process.env.APP_WEB_URL)
     process.env.APP_WEB_URL = 'http://localhost:5173';
   if (!process.env.SMTP_SECURE) process.env.SMTP_SECURE = 'false';
-  if (!process.env.SMTP_IGNORE_TLS) process.env.SMTP_IGNORE_TLS = 'true';
+  if (!process.env.SMTP_IGNORE_TLS) process.env.SMTP_IGNORE_TLS = 'false';
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 

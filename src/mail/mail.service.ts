@@ -13,7 +13,9 @@ export class MailService {
       (this.configService.get<string>('SMTP_SECURE') || 'false') === 'true';
     const ignoreTLS =
       (this.configService.get<string>('SMTP_IGNORE_TLS') || 'false') === 'true';
-    
+
+    const ignoreTLSEffective = secure ? false : ignoreTLS;
+
     const user = this.configService.get<string>('SMTP_USER');
     const pass = this.configService.get<string>('SMTP_PASS');
 
@@ -21,7 +23,7 @@ export class MailService {
       host,
       port,
       secure,
-      ignoreTLS,
+      ignoreTLS: ignoreTLSEffective,
       ...(user && pass ? { auth: { user, pass } } : {}),
     });
   }
