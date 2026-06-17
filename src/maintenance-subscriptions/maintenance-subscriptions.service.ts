@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -27,8 +27,41 @@ export class MaintenanceSubscriptionsService {
     };
   }
 
+  private parseMaintenanceOverride() {
+    const value =
+      this.configService
+        .get<string>('MAINTENANCE_MODE_OVERRIDE')
+        ?.trim()
+        .toLowerCase() || '';
+
+    if (!value) return null;
+    if (['on', 'true', '1'].includes(value)) return true;
+    if (['off', 'false', '0'].includes(value)) return false;
+
+    this.logger.warn(
+      `Ignoring invalid MAINTENANCE_MODE_OVERRIDE value: ${value}`,
+    );
+    return null;
+  }
+
+  private buildStateResponse(state: {
+    id: string;
+    enabled: boolean;
+    updatedAt: Date;
+  }) {
+    const overrideEnabled = this.parseMaintenanceOverride();
+
+    return {
+      ...state,
+      enabled: overrideEnabled ?? state.enabled,
+      adminEnabled: state.enabled,
+      overrideEnabled,
+      source: overrideEnabled === null ? 'admin' : 'env',
+    };
+  }
+
   async getState() {
-    return this.prisma.maintenanceState.upsert({
+    const state = await this.prisma.maintenanceState.upsert({
       where: { id: 'default' },
       update: {},
       create: {
@@ -36,10 +69,20 @@ export class MaintenanceSubscriptionsService {
         enabled: false,
       },
     });
+
+    return this.buildStateResponse(state);
   }
 
   async updateState(updateDto: UpdateMaintenanceStateDto) {
-    return this.prisma.maintenanceState.upsert({
+    const overrideEnabled = this.parseMaintenanceOverride();
+
+    if (overrideEnabled !== null) {
+      throw new ConflictException(
+        `Le mode maintenance est force via MAINTENANCE_MODE_OVERRIDE=${overrideEnabled ? 'on' : 'off'}. Videz cette variable pour reutiliser l admin.`,
+      );
+    }
+
+    const state = await this.prisma.maintenanceState.upsert({
       where: { id: 'default' },
       update: { enabled: updateDto.enabled },
       create: {
@@ -47,6 +90,8 @@ export class MaintenanceSubscriptionsService {
         enabled: updateDto.enabled,
       },
     });
+
+    return this.buildStateResponse(state);
   }
 
   async create(createDto: CreateMaintenanceSubscriptionDto) {
