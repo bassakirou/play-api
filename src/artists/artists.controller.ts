@@ -22,6 +22,27 @@ export class ArtistsController {
   constructor(private readonly artistsService: ArtistsService) {}
 
   @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  findMyChannel(@Request() req) {
+    return this.artistsService.findMyChannel(req.user.userId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('me')
+  upsertMyChannel(@Body() dto: CreateArtistDto, @Request() req) {
+    return this.artistsService.upsertMyChannel(req.user.userId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  updateMyChannel(@Body() dto: any, @Request() req) {
+    return this.artistsService.updateMyChannel(req.user.userId, dto);
+  }
+
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('create:artist')
   @Post()

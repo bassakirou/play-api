@@ -23,6 +23,8 @@ async function bootstrap() {
   app.enableCors({
     origin: true,
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
+    exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length'],
   });
 
   const config = new DocumentBuilder()
@@ -40,7 +42,29 @@ async function bootstrap() {
     prefix: '/uploads',
   });
 
-  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-  await app.listen(port);
+  const preferredPort = process.env.PORT ? Number(process.env.PORT) : 3000;
+  const fallbackPorts = [preferredPort, 3002, 3001, 3003].filter(
+    (p, i, arr) => arr.indexOf(p) === i,
+  );
+
+  let lastError: unknown = null;
+  for (const port of fallbackPorts) {
+    try {
+      await app.listen(port);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code?: unknown }).code === 'EADDRINUSE'
+      ) {
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 bootstrap();

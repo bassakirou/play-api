@@ -18,6 +18,8 @@ import { MailModule } from './mail/mail.module';
 import { PlaylistsModule } from './playlists/playlists.module';
 import { SearchModule } from './search/search.module';
 import { MaintenanceSubscriptionsModule } from './maintenance-subscriptions/maintenance-subscriptions.module';
+import { VideosModule } from './videos/videos.module';
+import { VideoPlaylistsModule } from './video-playlists/video-playlists.module';
 
 @Module({
   imports: [
@@ -36,8 +38,10 @@ import { MaintenanceSubscriptionsModule } from './maintenance-subscriptions/main
     PlaylistsModule,
     SearchModule,
     MaintenanceSubscriptionsModule,
+    VideosModule,
+    VideoPlaylistsModule,
   ],
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

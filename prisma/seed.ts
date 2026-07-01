@@ -99,6 +99,47 @@ async function main() {
     }
   }
 
+  console.log('Step 3: Ensuring video permissions...');
+  const videoPerms = [
+    { action: 'create', resource: 'video' },
+    { action: 'read', resource: 'video' },
+    { action: 'update', resource: 'video' },
+    { action: 'delete', resource: 'video' },
+  ] as const;
+
+  const ensured: Array<{ id: string }> = [];
+  for (const p of videoPerms) {
+    const existing = await prisma.permission.findFirst({
+      where: { action: p.action, resource: p.resource },
+    });
+    if (existing) {
+      ensured.push(existing);
+      continue;
+    }
+    const created = await prisma.permission.create({
+      data: { action: p.action, resource: p.resource },
+    });
+    ensured.push(created);
+  }
+
+  const adminRole = await prisma.role.findFirst({
+    where: { name: { equals: 'ADMIN', mode: 'insensitive' } },
+    include: { permissions: true },
+  });
+
+  if (adminRole) {
+    const existingIds = new Set(adminRole.permissions.map((p) => p.id));
+    const toConnect = ensured
+      .filter((p) => !existingIds.has(p.id))
+      .map((p) => ({ id: p.id }));
+    if (toConnect.length) {
+      await prisma.role.update({
+        where: { id: adminRole.id },
+        data: { permissions: { connect: toConnect } },
+      });
+    }
+  }
+
   const [albumCount, songCount] = await Promise.all([
     prisma.album.count(),
     prisma.song.count(),

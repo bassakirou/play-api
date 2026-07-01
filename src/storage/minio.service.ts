@@ -19,6 +19,7 @@ export type MinioConfig = {
 @Injectable()
 export class MinioService {
   private client: MinioClient | null = null;
+  private presignClient: MinioClient | null = null;
   private cfg: MinioConfig;
 
   constructor(@Optional() cfg?: MinioConfig) {
@@ -43,6 +44,21 @@ export class MinioService {
         accessKey: this.cfg.accessKey!,
         secretKey: this.cfg.secretKey!,
       });
+    }
+
+    if (this.client && this.cfg.publicUrl) {
+      try {
+        const publicBase = new URL(this.cfg.publicUrl);
+        this.presignClient = new MinioClient({
+          endPoint: publicBase.hostname,
+          port: publicBase.port ? Number(publicBase.port) : this.cfg.port,
+          useSSL: publicBase.protocol === 'https:',
+          accessKey: this.cfg.accessKey!,
+          secretKey: this.cfg.secretKey!,
+        });
+      } catch {
+        this.presignClient = null;
+      }
     }
   }
 
@@ -118,22 +134,17 @@ export class MinioService {
     const bucketName =
       (this.cfg.buckets?.[opts.bucket] as string) || opts.bucket;
     await this.ensureBucket(bucketName);
-    const url = await this.client.presignedGetObject(
+    const client = this.presignClient || this.client;
+    const responseHeaders =
+      opts.contentType && !opts.contentType.includes('*')
+        ? { 'response-content-type': opts.contentType }
+        : undefined;
+    const url = await client.presignedGetObject(
       bucketName,
       opts.objectName,
       opts.expiresSeconds ?? 60 * 60 * 24 * 7,
-      opts.contentType
-        ? { 'response-content-type': opts.contentType }
-        : undefined,
+      responseHeaders,
     );
-    if (this.cfg.publicUrl) {
-      const u = new URL(url);
-      const publicBase = new URL(this.cfg.publicUrl);
-      u.protocol = publicBase.protocol;
-      u.host = publicBase.host;
-      if (publicBase.port) u.port = publicBase.port;
-      return u.toString();
-    }
     return url;
   }
 }

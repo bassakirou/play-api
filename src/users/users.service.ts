@@ -94,24 +94,27 @@ export class UsersService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    const { role: roleName, ...data } = updateUserDto;
+    const dto = updateUserDto as unknown as Record<string, any>;
+    const data: Record<string, any> = { ...dto };
 
-    if (roleName) {
-      let role = await this.prisma.role.findUnique({
-        where: { name: roleName.toUpperCase() },
-      });
+    if (typeof dto.password === 'string' && dto.password.trim().length > 0) {
+      const p = dto.password.trim();
+      const looksHashed = p.startsWith('$2a$') || p.startsWith('$2b$') || p.startsWith('$2y$');
+      data.password = looksHashed ? p : await bcrypt.hash(p, 10);
+    } else {
+      delete data.password;
+    }
+
+    if (typeof dto.role === 'string' && dto.role.trim().length > 0) {
+      const roleName = dto.role.trim().toUpperCase();
+      let role = await this.prisma.role.findUnique({ where: { name: roleName } });
       if (!role) {
-        role = await this.prisma.role.create({
-          data: { name: roleName.toUpperCase() },
-        });
+        role = await this.prisma.role.create({ data: { name: roleName } });
       }
-      return this.prisma.user.update({
-        where: { id },
-        data: {
-          ...data,
-          role: { connect: { id: role.id } },
-        },
-      });
+      data.roleId = role.id;
+      delete data.role;
+    } else {
+      delete data.role;
     }
 
     return this.prisma.user.update({

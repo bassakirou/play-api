@@ -8,22 +8,23 @@ datasource db {
 }
 
 model User {
-  id               String     @id @default(uuid())
-  email            String     @unique
+  id               String          @id @default(uuid())
+  email            String          @unique
   password         String
   name             String
   roleId           String
   resetToken       String?
   resetTokenExpiry DateTime?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  managedArtists   Artist[]   @relation("LabelArtists")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  managedArtists   Artist[]        @relation("LabelArtists")
   artistProfile    Artist?
   createdGenres    Genre[]
   playlists        Playlist[]
-  role             Role       @relation(fields: [roleId], references: [id])
-  favorites        Song[]     @relation("UserFavorites")
-  followingArtists Artist[]   @relation("UserFollowsArtist")
+  role             Role            @relation(fields: [roleId], references: [id])
+  VideoPlaylist    VideoPlaylist[]
+  favorites        Song[]          @relation("UserFavorites")
+  followingArtists Artist[]        @relation("UserFollowsArtist")
 }
 
 model Role {
@@ -38,6 +39,8 @@ model Permission {
   action   String
   resource String
   roles    Role[] @relation("PermissionToRole")
+
+  @@unique([action, resource])
 }
 
 model Artist {
@@ -61,6 +64,7 @@ model Artist {
   groups    ArtistGroup[] @relation("ArtistGroupMembers")
   songs     Song[]        @relation("SongArtists")
   followers User[]        @relation("UserFollowsArtist")
+  videos    Video[]       @relation("VideoArtists")
 }
 
 model ArtistGroup {
@@ -113,6 +117,7 @@ model Genre {
   updatedAt   DateTime @updatedAt
   createdBy   User?    @relation(fields: [createdById], references: [id])
   songs       Song[]
+  videos      Video[]
 }
 
 model Playlist {
@@ -138,4 +143,35 @@ model MaintenanceState {
   id        String   @id @default("default")
   enabled   Boolean  @default(false)
   updatedAt DateTime @updatedAt
+}
+
+model Video {
+  id            String          @id @default(uuid())
+  title         String
+  description   String?
+  videoUrl      String
+  thumbnailUrl  String?
+  duration      Int
+  views         Int             @default(0)
+  likes         Int             @default(0)
+  isPublished   Boolean         @default(false)
+  category      String?
+  tags          String[]        @default([])
+  genreId       String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  genre         Genre?          @relation(fields: [genreId], references: [id])
+  artists       Artist[]        @relation("VideoArtists")
+  VideoPlaylist VideoPlaylist[] @relation("VideoPlaylistVideos")
+}
+
+model VideoPlaylist {
+  id          String   @id
+  name        String
+  description String?
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  User        User     @relation(fields: [userId], references: [id])
+  Video       Video[]  @relation("VideoPlaylistVideos")
 }

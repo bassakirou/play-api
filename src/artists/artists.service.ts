@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateArtistDto } from './dto/create-artist.dto';
 import { MinioService } from '../storage/minio.service';
@@ -115,6 +115,82 @@ export class ArtistsService {
     };
 
     return refreshedArtist;
+  }
+
+  async findMyChannel(userId: string) {
+    const artist = await this.prisma.artist.findUnique({
+      where: { userId },
+      include: {
+        _count: { select: { followers: true } },
+      },
+    });
+    if (!artist) return null;
+
+    return {
+      ...artist,
+      imageUrl: artist.imageUrl ? await this.refreshUrl(artist.imageUrl) : null,
+      bannerUrl: artist.bannerUrl ? await this.refreshUrl(artist.bannerUrl) : null,
+    };
+  }
+
+  async upsertMyChannel(userId: string, dto: CreateArtistDto) {
+    const name = (dto?.name || '').trim();
+    if (!name) throw new BadRequestException('name is required');
+
+    const artist = await this.prisma.artist.upsert({
+      where: { userId },
+      create: {
+        name,
+        bio: dto.bio || null,
+        imageUrl: dto.imageUrl || null,
+        bannerUrl: dto.bannerUrl || null,
+        gallery: dto.gallery || null,
+        certified: !!dto.certified,
+        userId,
+      },
+      update: {
+        name,
+        bio: dto.bio || null,
+        imageUrl: dto.imageUrl || null,
+        bannerUrl: dto.bannerUrl || null,
+        gallery: dto.gallery || null,
+      },
+      include: {
+        _count: { select: { followers: true } },
+      },
+    });
+
+    return {
+      ...artist,
+      imageUrl: artist.imageUrl ? await this.refreshUrl(artist.imageUrl) : null,
+      bannerUrl: artist.bannerUrl ? await this.refreshUrl(artist.bannerUrl) : null,
+    };
+  }
+
+  async updateMyChannel(userId: string, dto: any) {
+    const existing = await this.prisma.artist.findUnique({ where: { userId } });
+    if (!existing) throw new BadRequestException('No channel to update');
+
+    const data: any = {};
+    if (typeof dto?.name === 'string') data.name = dto.name.trim();
+    if (typeof dto?.bio !== 'undefined') data.bio = dto.bio || null;
+    if (typeof dto?.imageUrl !== 'undefined') data.imageUrl = dto.imageUrl || null;
+    if (typeof dto?.bannerUrl !== 'undefined') data.bannerUrl = dto.bannerUrl || null;
+    if (typeof dto?.gallery !== 'undefined') data.gallery = dto.gallery || null;
+
+    const updated = await this.prisma.artist.update({
+      where: { userId },
+      data,
+      include: {
+        _count: { select: { followers: true } },
+      },
+    });
+
+    return {
+      ...updated,
+      imageUrl: updated.imageUrl ? await this.refreshUrl(updated.imageUrl) : null,
+      bannerUrl: updated.bannerUrl ? await this.refreshUrl(updated.bannerUrl) : null,
+    };
   }
 
   private async refreshUrl(url: string) {

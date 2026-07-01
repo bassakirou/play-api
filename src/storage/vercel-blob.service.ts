@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { put } from '@vercel/blob';
-import { generateClientTokenFromReadWriteToken } from '@vercel/blob/client';
+
 
 @Injectable()
 export class VercelBlobService {
@@ -12,8 +12,17 @@ export class VercelBlobService {
     if (!this.isEnabled()) {
       throw new Error('Vercel Blob token is missing');
     }
-    return generateClientTokenFromReadWriteToken({
+    const mod: any = await import('@vercel/blob');
+    const fn =
+      mod.generateClientToken || mod.generateUploadToken || mod.generateToken;
+    if (typeof fn !== 'function') {
+      throw new Error('Vercel Blob token generator is not available');
+    }
+    return fn({
       pathname,
+      onUploadCompleted: async (payload: any) => {
+        console.log('[VercelBlobService] Client upload completed:', payload);
+      },
     });
   }
 
