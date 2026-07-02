@@ -1,6 +1,11 @@
-import { IsBoolean } from 'class-validator';
+import { IsBoolean, IsOptional } from 'class-validator';
 
 export class UpdateMaintenanceStateDto {
   @IsBoolean()
-  enabled!: boolean;
+  @IsOptional()
+  enabled?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  adminPriority?: boolean;
 }

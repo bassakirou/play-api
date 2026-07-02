@@ -47,16 +47,20 @@ export class MaintenanceSubscriptionsService {
   private buildStateResponse(state: {
     id: string;
     enabled: boolean;
+    adminPriority: boolean;
     updatedAt: Date;
   }) {
     const overrideEnabled = this.parseMaintenanceOverride();
+    const activeEnabled = overrideEnabled ?? (state.adminPriority ? state.enabled : false);
 
     return {
-      ...state,
-      enabled: overrideEnabled ?? state.enabled,
+      id: state.id,
+      enabled: activeEnabled,
+      adminPriority: state.adminPriority,
       adminEnabled: state.enabled,
       overrideEnabled,
       source: overrideEnabled === null ? 'admin' : 'env',
+      updatedAt: state.updatedAt,
     };
   }
 
@@ -67,6 +71,7 @@ export class MaintenanceSubscriptionsService {
       create: {
         id: 'default',
         enabled: false,
+        adminPriority: false,
       },
     });
 
@@ -84,10 +89,14 @@ export class MaintenanceSubscriptionsService {
 
     const state = await this.prisma.maintenanceState.upsert({
       where: { id: 'default' },
-      update: { enabled: updateDto.enabled },
+      update: {
+        enabled: updateDto.enabled,
+        adminPriority: updateDto.adminPriority,
+      },
       create: {
         id: 'default',
-        enabled: updateDto.enabled,
+        enabled: updateDto.enabled ?? false,
+        adminPriority: updateDto.adminPriority ?? false,
       },
     });
 

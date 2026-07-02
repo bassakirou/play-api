@@ -140,9 +140,10 @@ model MaintenanceSubscription {
 }
 
 model MaintenanceState {
-  id        String   @id @default("default")
-  enabled   Boolean  @default(false)
-  updatedAt DateTime @updatedAt
+  id             String   @id @default("default")
+  enabled        Boolean  @default(false)
+  adminPriority  Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
 }
 
 model Video {
