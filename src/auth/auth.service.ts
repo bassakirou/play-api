@@ -146,4 +146,9 @@ export class AuthService {
 
     return { message: 'Password changed successfully' };
   }
+
+  async checkEmail(email: string) {
+    const user = await this.usersService.findByEmail(email);
+    return { exists: !!user };
+  }
 }

@@ -7,6 +7,7 @@ import {
   HttpStatus,
   UseGuards,
   Request,
+  Query,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -60,5 +61,11 @@ export class AuthController {
       body.currentPassword,
       body.newPassword,
     );
+  }
+
+  @Get('check-email')
+  @ApiOperation({ summary: 'Check if an email exists' })
+  checkEmail(@Query('email') email: string) {
+    return this.authService.checkEmail(email);
   }
 }
