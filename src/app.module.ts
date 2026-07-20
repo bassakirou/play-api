@@ -20,6 +20,7 @@ import { SearchModule } from './search/search.module';
 import { MaintenanceSubscriptionsModule } from './maintenance-subscriptions/maintenance-subscriptions.module';
 import { VideosModule } from './videos/videos.module';
 import { VideoPlaylistsModule } from './video-playlists/video-playlists.module';
+import { MigrationModule } from './migration/migration.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { VideoPlaylistsModule } from './video-playlists/video-playlists.module';
     MaintenanceSubscriptionsModule,
     VideosModule,
     VideoPlaylistsModule,
+    MigrationModule,
   ],
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],
