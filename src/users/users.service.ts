@@ -95,14 +95,14 @@ export class UsersService {
 
   async update(id: string, updateUserDto: UpdateUserDto) {
     const dto = updateUserDto as unknown as Record<string, any>;
-    const data: Record<string, any> = { ...dto };
+    const rawData: Record<string, any> = { ...dto };
 
     if (typeof dto.password === 'string' && dto.password.trim().length > 0) {
       const p = dto.password.trim();
       const looksHashed = p.startsWith('$2a$') || p.startsWith('$2b$') || p.startsWith('$2y$');
-      data.password = looksHashed ? p : await bcrypt.hash(p, 10);
+      rawData.password = looksHashed ? p : await bcrypt.hash(p, 10);
     } else {
-      delete data.password;
+      delete rawData.password;
     }
 
     if (typeof dto.role === 'string' && dto.role.trim().length > 0) {
@@ -111,15 +111,22 @@ export class UsersService {
       if (!role) {
         role = await this.prisma.role.create({ data: { name: roleName } });
       }
-      data.roleId = role.id;
-      delete data.role;
-    } else {
-      delete data.role;
+      rawData.roleId = role.id;
+    }
+    delete rawData.role;
+
+    const allowedKeys = ['email', 'password', 'name', 'resetToken', 'resetTokenExpiry', 'roleId'];
+    const sanitizedData: Record<string, any> = {};
+    for (const key of allowedKeys) {
+      if (rawData[key] !== undefined) {
+        sanitizedData[key] = rawData[key];
+      }
     }
 
     return this.prisma.user.update({
       where: { id },
-      data,
+      data: sanitizedData,
+      include: { role: true },
     });
   }
 
