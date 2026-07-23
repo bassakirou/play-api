@@ -43,28 +43,10 @@ export class SongsService {
     };
   }
 
-  private async refreshUrl(url: string, bucket: 'audio' | 'images') {
+  private refreshUrl(url: string, _bucket: 'audio' | 'images') {
     if (!url) return url;
-
-    // 1. URLs Vercel Blob : Pas de rafraîchissement
-    if (url.includes('public.blob.vercel-storage.com')) return url;
-
-    // 2. URLs Minio : On rafraîchit si Minio est actif
-    if (
-      this.minio.isEnabled() &&
-      (url.includes(`/${bucket}/`) || url.includes('?'))
-    ) {
-      try {
-        const u = new URL(url);
-        const objectName = u.pathname.split('/').pop();
-        if (!objectName) return url;
-        return await this.minio.presignGet({ bucket, objectName });
-      } catch {
-        return url;
-      }
-    }
-
-    return url;
+    const cleanUrl = url.replace('http://localhost:9000', 'https://media.pyramidplay.cm');
+    return cleanUrl;
   }
 
   create(createSongDto: CreateSongDto) {
@@ -125,25 +107,16 @@ export class SongsService {
 
     const data: Record<string, any> = { ...rest };
 
-    // Détermination intelligente de isSingle pour la mise à jour
-    let isSingle = rawIsSingle;
-    if (typeof albumId !== 'undefined' && albumId !== null) {
-      isSingle = false;
-    }
+    const cleanAlbumId =
+      typeof albumId === 'string' && albumId.trim() !== '' ? albumId : null;
+    const isSingle = cleanAlbumId
+      ? false
+      : typeof rawIsSingle === 'boolean'
+        ? rawIsSingle
+        : true;
 
-    if (typeof isSingle === 'boolean') {
-      data.isSingle = isSingle;
-      if (isSingle) {
-        if (!coverUrl && typeof coverUrl !== 'undefined') {
-          throw new BadRequestException('coverUrl is required for singles');
-        }
-        data.albumId = null;
-      } else {
-        if (typeof albumId !== 'undefined') {
-          data.albumId = albumId;
-        }
-      }
-    }
+    data.isSingle = isSingle;
+    data.albumId = isSingle ? null : cleanAlbumId;
 
     if (typeof coverUrl !== 'undefined') {
       data.coverUrl = coverUrl || null;
@@ -151,10 +124,10 @@ export class SongsService {
 
     const updateData: any = {
       ...data,
-      ...(artistIds
+      ...(artistIds && Array.isArray(artistIds)
         ? { artists: { set: artistIds.map((aid: string) => ({ id: aid })) } }
         : {}),
-      ...(groupIds
+      ...(groupIds && Array.isArray(groupIds)
         ? { groups: { set: groupIds.map((gid: string) => ({ id: gid })) } }
         : {}),
     };

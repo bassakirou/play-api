@@ -162,21 +162,9 @@ export class VideoPlaylistsService {
     };
   }
 
-  private async refreshUrl(url: string, bucket: 'videos' | 'images') {
+  private refreshUrl(url: string, _bucket: 'videos' | 'images') {
     if (!url) return url;
-    if (url.includes('public.blob.vercel-storage.com')) return url;
-
-    if (this.minio.isEnabled() && (url.includes(`/${bucket}/`) || url.includes('?'))) {
-      try {
-        const u = new URL(url);
-        const objectName = u.pathname.split('/').pop();
-        if (!objectName) return url;
-        return await this.minio.presignGet({ bucket, objectName });
-      } catch {
-        return url;
-      }
-    }
-
-    return url;
+    const cleanUrl = url.replace('http://localhost:9000', 'https://media.pyramidplay.cm');
+    return cleanUrl;
   }
 }

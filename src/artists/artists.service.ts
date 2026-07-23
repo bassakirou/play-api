@@ -193,28 +193,10 @@ export class ArtistsService {
     };
   }
 
-  private async refreshUrl(url: string) {
+  private refreshUrl(url: string) {
     if (!url) return url;
-
-    // 1. URLs Vercel Blob : Toujours directes, pas de rafraîchissement
-    if (url.includes('public.blob.vercel-storage.com')) return url;
-
-    // 2. URLs Minio : On rafraîchit uniquement si Minio est activé ET que c'est une URL Minio (contient /images/)
-    if (
-      this.minio.isEnabled() &&
-      (url.includes('/images/') || url.includes('?'))
-    ) {
-      try {
-        const u = new URL(url);
-        const objectName = u.pathname.split('/').pop();
-        if (!objectName) return url;
-        return await this.minio.presignGet({ bucket: 'images', objectName });
-      } catch {
-        return url;
-      }
-    }
-
-    return url;
+    const cleanUrl = url.replace('http://localhost:9000', 'https://media.pyramidplay.cm');
+    return cleanUrl;
   }
 
   findCreators() {

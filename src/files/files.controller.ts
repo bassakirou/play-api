@@ -16,6 +16,7 @@ import { randomBytes } from 'crypto';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { MinioService } from '../storage/minio.service';
 import { VercelBlobService } from '../storage/vercel-blob.service';
+import { HlsTranscoderService } from '../storage/hls-transcoder.service';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { Readable } from 'stream';
 
@@ -65,6 +66,7 @@ export class FilesController {
   constructor(
     private readonly minio: MinioService,
     private readonly blob: VercelBlobService,
+    private readonly hlsTranscoder: HlsTranscoderService,
   ) { }
 
   @Get('resolved-image')
