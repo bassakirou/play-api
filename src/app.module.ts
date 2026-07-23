@@ -46,4 +46,5 @@ import { MigrationModule } from './migration/migration.module';
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],
 })
+// Trigger play-api sync & vercel deploy
 export class AppModule { }
