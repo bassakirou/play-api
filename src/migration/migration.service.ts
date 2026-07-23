@@ -137,11 +137,19 @@ export class MigrationService {
 
     if (data.permissions) {
       for (const p of data.permissions) {
-        await this.prisma.permission.upsert({
-          where: { id: p.id },
-          update: { action: p.action, resource: p.resource },
-          create: { id: p.id, action: p.action, resource: p.resource },
-        });
+        try {
+          const existing = await this.prisma.permission.findFirst({
+            where: { action: p.action, resource: p.resource },
+          });
+          const targetId = existing ? existing.id : p.id;
+          await this.prisma.permission.upsert({
+            where: { id: targetId },
+            update: { action: p.action, resource: p.resource },
+            create: { id: targetId, action: p.action, resource: p.resource },
+          });
+        } catch (e) {
+          this.logger.warn(`Permission import warning: ${e.message}`);
+        }
       }
     }
 
