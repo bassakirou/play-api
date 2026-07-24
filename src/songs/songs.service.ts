@@ -15,7 +15,7 @@ export class SongsService {
 
   async findAll() {
     const songs = await this.prisma.song.findMany({
-      include: { artists: true, groups: true, album: true, genre: true, genres: true },
+      include: { artists: true, groups: true, album: true, genre: true },
     });
     return songs.map((s) => ({
       ...s,
@@ -27,7 +27,7 @@ export class SongsService {
   async findOne(id: string) {
     const s = await this.prisma.song.findUnique({
       where: { id },
-      include: { artists: true, groups: true, album: true, genre: true, genres: true },
+      include: { artists: true, groups: true, album: true, genre: true },
     });
     if (!s) return null;
     return {
@@ -41,7 +41,7 @@ export class SongsService {
     return this.minio.refreshUrl(url);
   }
 
-  create(createSongDto: CreateSongDto) {
+  async create(createSongDto: CreateSongDto) {
     const dto = createSongDto as unknown as Record<string, any>;
     const {
       title,
@@ -57,17 +57,35 @@ export class SongsService {
       genreIds,
     } = dto;
 
-    const finalArtistIds: string[] = Array.isArray(artistIds)
+    const rawArtistIds: string[] = Array.isArray(artistIds)
       ? artistIds
       : artistId
         ? [artistId]
         : [];
 
-    const finalGenreIds: string[] = Array.isArray(genreIds) && genreIds.length > 0
+    const rawGroupIds: string[] = Array.isArray(groupIds) ? groupIds : [];
+
+    const rawGenreIds: string[] = Array.isArray(genreIds) && genreIds.length > 0
       ? genreIds
       : genreId
         ? [genreId]
         : [];
+
+    const [existingArtists, existingGroups, existingGenres] = await Promise.all([
+      rawArtistIds.length > 0
+        ? this.prisma.artist.findMany({ where: { id: { in: rawArtistIds } }, select: { id: true } })
+        : [],
+      rawGroupIds.length > 0
+        ? this.prisma.artistGroup.findMany({ where: { id: { in: rawGroupIds } }, select: { id: true } })
+        : [],
+      rawGenreIds.length > 0
+        ? this.prisma.genre.findMany({ where: { id: { in: rawGenreIds } }, select: { id: true } })
+        : [],
+    ]);
+
+    const finalArtistIds = existingArtists.map((a) => a.id);
+    const finalGroupIds = existingGroups.map((g) => g.id);
+    const finalGenreIds = existingGenres.map((g) => g.id);
 
     const isSingle = albumId ? false : (rawIsSingle ?? true);
 
@@ -81,8 +99,8 @@ export class SongsService {
       }
     }
 
-    if (finalGenreIds.length === 0) {
-      throw new BadRequestException('genreId or genreIds is required');
+    if (finalArtistIds.length === 0 && finalGroupIds.length === 0) {
+      throw new BadRequestException('Au moins un artiste ou un groupe d’artistes valide est requis');
     }
 
     const primaryGenreId = finalGenreIds[0];
@@ -94,13 +112,15 @@ export class SongsService {
       isSingle,
       coverUrl: coverUrl || null,
       ...(primaryGenreId ? { genre: { connect: { id: primaryGenreId } } } : {}),
-      genres: { connect: finalGenreIds.map((gid) => ({ id: gid })) },
+      ...(finalGenreIds.length > 0
+        ? { genres: { connect: finalGenreIds.map((gid) => ({ id: gid })) } }
+        : {}),
       ...(isSingle ? {} : { album: { connect: { id: albumId } } }),
       ...(finalArtistIds.length > 0
         ? { artists: { connect: finalArtistIds.map((id) => ({ id })) } }
         : {}),
-      ...(groupIds && groupIds.length > 0
-        ? { groups: { connect: groupIds.map((id) => ({ id })) } }
+      ...(finalGroupIds.length > 0
+        ? { groups: { connect: finalGroupIds.map((id) => ({ id })) } }
         : {}),
     };
 
@@ -109,7 +129,7 @@ export class SongsService {
     });
   }
 
-  update(id: string, updateSongDto: any) {
+  async update(id: string, updateSongDto: any) {
     const {
       title,
       duration,
@@ -148,23 +168,36 @@ export class SongsService {
       updateData.album = { connect: { id: cleanAlbumId } };
     }
 
-    const finalGenreIds: string[] | undefined = Array.isArray(genreIds)
+    const rawGenreIds: string[] | undefined = Array.isArray(genreIds)
       ? genreIds
       : genreId
         ? [genreId]
         : undefined;
 
-    if (finalGenreIds && finalGenreIds.length > 0) {
-      updateData.genre = { connect: { id: finalGenreIds[0] } };
-      updateData.genres = { set: finalGenreIds.map((gid: string) => ({ id: gid })) };
+    if (rawGenreIds) {
+      const existingGenres = await this.prisma.genre.findMany({
+        where: { id: { in: rawGenreIds } },
+        select: { id: true },
+      });
+      const validGenreIds = existingGenres.map((g) => g.id);
+      if (validGenreIds.length > 0) {
+        updateData.genre = { connect: { id: validGenreIds[0] } };
+        updateData.genres = { set: validGenreIds.map((gid: string) => ({ id: gid })) };
+      }
     }
 
     if (Array.isArray(artistIds)) {
-      updateData.artists = { set: artistIds.map((aid: string) => ({ id: aid })) };
+      const existingArtists = artistIds.length > 0
+        ? await this.prisma.artist.findMany({ where: { id: { in: artistIds } }, select: { id: true } })
+        : [];
+      updateData.artists = { set: existingArtists.map((a) => ({ id: a.id })) };
     }
 
     if (Array.isArray(groupIds)) {
-      updateData.groups = { set: groupIds.map((gid: string) => ({ id: gid })) };
+      const existingGroups = groupIds.length > 0
+        ? await this.prisma.artistGroup.findMany({ where: { id: { in: groupIds } }, select: { id: true } })
+        : [];
+      updateData.groups = { set: existingGroups.map((g) => ({ id: g.id })) };
     }
 
     return this.prisma.song.update({
