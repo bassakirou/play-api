@@ -65,6 +65,7 @@ export class UsersService {
 
   findAll() {
     return this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
       include: { role: true, artistProfile: true },
     });
   }

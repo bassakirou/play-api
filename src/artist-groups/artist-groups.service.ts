@@ -20,7 +20,10 @@ export class ArtistGroupsService {
   }
 
   findAll() {
-    return this.prisma.artistGroup.findMany({ include: { members: true } });
+    return this.prisma.artistGroup.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { members: true },
+    });
   }
 
   findOne(id: string) {

@@ -15,6 +15,7 @@ export class SongsService {
 
   async findAll() {
     const songs = await this.prisma.song.findMany({
+      orderBy: { createdAt: 'desc' },
       include: { artists: true, groups: true, album: true, genre: true },
     });
     return songs.map((s) => ({

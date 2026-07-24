@@ -37,6 +37,7 @@ export class AlbumsService {
     }
 
     const albums = await this.prisma.album.findMany({
+      orderBy: { createdAt: 'desc' },
       include: {
         artist: true,
         songs: {

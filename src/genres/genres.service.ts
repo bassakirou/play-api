@@ -48,7 +48,9 @@ export class GenresService implements OnModuleInit {
   }
 
   findAll() {
-    return this.prisma.genre.findMany();
+    return this.prisma.genre.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   findOne(id: string) {

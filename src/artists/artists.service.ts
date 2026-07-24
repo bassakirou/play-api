@@ -50,6 +50,7 @@ export class ArtistsService {
 
   async findAll() {
     const artists = await this.prisma.artist.findMany({
+      orderBy: { createdAt: 'desc' },
       include: {
         albums: true,
         songs: true,
