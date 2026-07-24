@@ -22,8 +22,14 @@ import { VideosModule } from './videos/videos.module';
 import { VideoPlaylistsModule } from './video-playlists/video-playlists.module';
 import { MigrationModule } from './migration/migration.module';
 
+import { ConfigModule } from '@nestjs/config';
+
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env.local', '.env'],
+    }),
     PrismaModule,
     StorageModule,
     AuthModule,
