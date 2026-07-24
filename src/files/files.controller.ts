@@ -394,16 +394,9 @@ export class FilesController {
     }
     try {
       let target = url;
-      if (!target.includes('public.blob.vercel-storage.com') && this.minio.isEnabled()) {
-        const match = target.match(/\/(audio|play-audio)\/([^?]+)(\?.*)?$/);
-        if (match && match[2]) {
-          const bucket = match[1] === 'play-audio' ? 'play-audio' : 'audio';
-          const objectName = match[2];
-          target = await this.minio.presignGet({
-            bucket: bucket as any,
-            objectName,
-          });
-        }
+      if (!target.startsWith('http://') && !target.startsWith('https://')) {
+        const publicUrl = process.env.MINIO_PUBLIC_URL || 'http://localhost:9000';
+        target = `${publicUrl.replace(/\/+$/, '')}/${target.replace(/^\/+/, '')}`;
       }
 
       const headers: Record<string, string> = {};
@@ -412,7 +405,32 @@ export class FilesController {
         headers.Range = range;
       }
 
-      const upstream = await fetch(target, { headers });
+      let upstream = await fetch(target, { headers }).catch((err) => {
+        console.log('[resolvedAudio] Direct fetch failed:', err.message);
+        return null;
+      });
+
+      if ((!upstream || !upstream.ok) && this.minio.isEnabled()) {
+        try {
+          const match = target.match(/\/(audio|play-audio)\/([^?]+)(\?.*)?$/);
+          if (match && match[2]) {
+            const bucket = match[1] === 'play-audio' ? 'play-audio' : 'audio';
+            const objectName = match[2];
+            const presignedUrl = await this.minio.presignGet({
+              bucket: bucket as any,
+              objectName,
+            });
+            upstream = await fetch(presignedUrl, { headers }).catch(() => null);
+          }
+        } catch (err) {
+          console.error('[resolvedAudio] Presign fallback error:', err.message);
+        }
+      }
+
+      if (!upstream) {
+        res.status(404).send('Audio stream not found');
+        return;
+      }
 
       res.status(upstream.status);
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -437,8 +455,9 @@ export class FilesController {
       }
 
       Readable.fromWeb(upstream.body as any).pipe(res);
-    } catch {
-      res.status(500).send('Failed to resolve audio');
+    } catch (err) {
+      console.error('[resolvedAudio] Critical error:', err.message);
+      res.status(500).send(`Failed to resolve audio: ${err.message}`);
     }
   }
 
@@ -451,16 +470,9 @@ export class FilesController {
 
     try {
       let target = url;
-      if (!target.includes('public.blob.vercel-storage.com') && this.minio.isEnabled()) {
-        const match = target.match(/\/(videos|play-videos)\/([^?]+)(\?.*)?$/);
-        if (match && match[2]) {
-          const bucket = match[1] === 'play-videos' ? 'play-videos' : 'videos';
-          const objectName = match[2];
-          target = await this.minio.presignGet({
-            bucket: bucket as any,
-            objectName,
-          });
-        }
+      if (!target.startsWith('http://') && !target.startsWith('https://')) {
+        const publicUrl = process.env.MINIO_PUBLIC_URL || 'http://localhost:9000';
+        target = `${publicUrl.replace(/\/+$/, '')}/${target.replace(/^\/+/, '')}`;
       }
 
       const headers: Record<string, string> = {};
@@ -469,7 +481,32 @@ export class FilesController {
         headers.Range = range;
       }
 
-      const upstream = await fetch(target, { headers });
+      let upstream = await fetch(target, { headers }).catch((err) => {
+        console.log('[resolvedVideo] Direct fetch failed:', err.message);
+        return null;
+      });
+
+      if ((!upstream || !upstream.ok) && this.minio.isEnabled()) {
+        try {
+          const match = target.match(/\/(videos|play-videos)\/([^?]+)(\?.*)?$/);
+          if (match && match[2]) {
+            const bucket = match[1] === 'play-videos' ? 'play-videos' : 'videos';
+            const objectName = match[2];
+            const presignedUrl = await this.minio.presignGet({
+              bucket: bucket as any,
+              objectName,
+            });
+            upstream = await fetch(presignedUrl, { headers }).catch(() => null);
+          }
+        } catch (err) {
+          console.error('[resolvedVideo] Presign fallback error:', err.message);
+        }
+      }
+
+      if (!upstream) {
+        res.status(404).send('Video stream not found');
+        return;
+      }
 
       res.status(upstream.status);
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -493,8 +530,9 @@ export class FilesController {
       }
 
       Readable.fromWeb(upstream.body as any).pipe(res);
-    } catch {
-      res.status(500).send('Failed to resolve video');
+    } catch (err) {
+      console.error('[resolvedVideo] Critical error:', err.message);
+      res.status(500).send(`Failed to resolve video: ${err.message}`);
     }
   }
 

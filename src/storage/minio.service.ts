@@ -54,10 +54,17 @@ export class MinioService {
     if (this.client && this.cfg.publicUrl) {
       try {
         const publicBase = new URL(this.cfg.publicUrl);
+        const isHttps = publicBase.protocol === 'https:';
+        const port = publicBase.port
+          ? Number(publicBase.port)
+          : isHttps
+            ? 443
+            : (this.cfg.port || 80);
+
         this.presignClient = new MinioClient({
           endPoint: publicBase.hostname,
-          port: publicBase.port ? Number(publicBase.port) : this.cfg.port,
-          useSSL: publicBase.protocol === 'https:',
+          port,
+          useSSL: isHttps,
           accessKey: this.cfg.accessKey!,
           secretKey: this.cfg.secretKey!,
         });
