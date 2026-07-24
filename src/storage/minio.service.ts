@@ -180,12 +180,25 @@ export class MinioService {
     if (!this.client) {
       throw new Error('MinIO not configured');
     }
-    const bucketName =
-      (this.cfg.buckets?.[bucket as any] as string) || bucket;
-    await this.ensureBucket(bucketName);
-    const stat = await this.client.statObject(bucketName, objectName).catch(() => null);
-    const stream = await this.client.getObject(bucketName, objectName);
-    return { stream, stat };
+    const rawBucket = bucket || 'audio';
+    const candidateBuckets = [
+      (this.cfg.buckets?.[rawBucket as any] as string) || rawBucket,
+      rawBucket,
+      rawBucket.replace(/^play-/, ''),
+      `play-${rawBucket.replace(/^play-/, '')}`,
+    ].filter((b, i, a) => b && a.indexOf(b) === i);
+
+    let lastError: any = null;
+    for (const b of candidateBuckets) {
+      try {
+        const stat = await this.client.statObject(b, objectName).catch(() => null);
+        const stream = await this.client.getObject(b, objectName);
+        return { stream, stat };
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError || new Error(`Object ${objectName} not found in buckets: ${candidateBuckets.join(', ')}`);
   }
 
   refreshUrl(url: string | null | undefined): string | null {

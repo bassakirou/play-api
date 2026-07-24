@@ -20,6 +20,15 @@ import { HlsTranscoderService } from '../storage/hls-transcoder.service';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { Readable } from 'stream';
 
+async function streamToString(stream: any): Promise<string> {
+  const chunks: Buffer[] = [];
+  return new Promise((resolve, reject) => {
+    stream.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+    stream.on('error', (err: any) => reject(err));
+    stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+  });
+}
+
 function ensureDir(path: string) {
   try {
     if (!existsSync(path)) {
@@ -405,10 +414,32 @@ export class FilesController {
           const objectName = match[2];
           try {
             const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
+            if (objectName.endsWith('.m3u8')) {
+              const text = await streamToString(stream);
+              const baseDirUrl = url.substring(0, url.lastIndexOf('/') + 1);
+              const reqProtocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+              const reqHost = req.headers['x-forwarded-host'] || req.get('host') || 'api.pyramidplay.cm';
+              const selfBase = `${reqProtocol}://${reqHost}/files/resolved-audio?url=`;
+
+              const rewritten = text
+                .split('\n')
+                .map((line) => {
+                  const trimmed = line.trim();
+                  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+                    return line;
+                  }
+                  return `${selfBase}${encodeURIComponent(baseDirUrl + trimmed)}`;
+                })
+                .join('\n');
+
+              res.setHeader('Content-Type', 'application/x-mpegURL');
+              res.setHeader('Cache-Control', 'no-cache');
+              res.status(200).send(rewritten);
+              return;
+            }
+
             if (stat?.metaData?.['content-type'] || stat?.contentType) {
               res.setHeader('Content-Type', stat.metaData?.['content-type'] || stat.contentType);
-            } else if (objectName.endsWith('.m3u8')) {
-              res.setHeader('Content-Type', 'application/x-mpegURL');
             } else if (objectName.endsWith('.ts')) {
               res.setHeader('Content-Type', 'video/mp2t');
             } else if (objectName.endsWith('.mp3')) {
@@ -497,10 +528,32 @@ export class FilesController {
           const objectName = match[2];
           try {
             const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
+            if (objectName.endsWith('.m3u8')) {
+              const text = await streamToString(stream);
+              const baseDirUrl = url.substring(0, url.lastIndexOf('/') + 1);
+              const reqProtocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+              const reqHost = req.headers['x-forwarded-host'] || req.get('host') || 'api.pyramidplay.cm';
+              const selfBase = `${reqProtocol}://${reqHost}/files/resolved-video?url=`;
+
+              const rewritten = text
+                .split('\n')
+                .map((line) => {
+                  const trimmed = line.trim();
+                  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+                    return line;
+                  }
+                  return `${selfBase}${encodeURIComponent(baseDirUrl + trimmed)}`;
+                })
+                .join('\n');
+
+              res.setHeader('Content-Type', 'application/x-mpegURL');
+              res.setHeader('Cache-Control', 'no-cache');
+              res.status(200).send(rewritten);
+              return;
+            }
+
             if (stat?.metaData?.['content-type'] || stat?.contentType) {
               res.setHeader('Content-Type', stat.metaData?.['content-type'] || stat.contentType);
-            } else if (objectName.endsWith('.m3u8')) {
-              res.setHeader('Content-Type', 'application/x-mpegURL');
             } else if (objectName.endsWith('.ts')) {
               res.setHeader('Content-Type', 'video/mp2t');
             } else if (objectName.endsWith('.mp4')) {
