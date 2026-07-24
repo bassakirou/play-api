@@ -179,11 +179,14 @@ export class MinioService implements OnModuleInit {
       });
       throw error;
     }
-    return this.presignGet({
-      bucket: opts.bucket,
-      objectName: opts.objectName,
-      contentType: opts.contentType,
-    });
+
+    const publicUrl =
+      process.env.MINIO_PUBLIC_URL ||
+      (process.env.NODE_ENV === 'production' || !!process.env.VERCEL
+        ? 'https://media.pyramidplay.cm'
+        : 'http://localhost:9000');
+
+    return `${publicUrl}/${bucketName}/${opts.objectName}`;
   }
 
   async presignGet(opts: {

@@ -344,15 +344,10 @@ export class FilesController {
 
   @Post('upload-video')
   @UseInterceptors(
-    FileInterceptor(
-      'file',
-      process.env.BLOB_READ_WRITE_TOKEN || process.env.MINIO_ENDPOINT
-        ? { storage: memoryStorage(), limits: { fileSize: 1024 * 1024 * 500 } }
-        : {
-          storage: diskVideoStorage(),
-          limits: { fileSize: 1024 * 1024 * 500 },
-        },
-    ),
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 1024 * 1024 * 500 },
+    }),
   )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -368,12 +363,20 @@ export class FilesController {
     const isProduction =
       process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
 
+    const fileBuffer =
+      file.buffer || ((file as any).path ? readFileSync((file as any).path) : null);
+
+    if (!fileBuffer) {
+      console.error('[FilesController] Error: fileBuffer is null or undefined for video upload');
+      return { error: 'No video file buffer available' };
+    }
+
     if (isProduction && this.blob.isEnabled()) {
       try {
         const objectName = `videos/${uniqueName}`;
         const url = await this.blob.upload({
           objectName,
-          buffer: file.buffer,
+          buffer: fileBuffer,
           contentType: file.mimetype,
         });
         return { url };
@@ -386,11 +389,12 @@ export class FilesController {
 
     if (this.minio.isEnabled()) {
       try {
+        console.log(`[FilesController] Uploading video to MinIO: ${uniqueName}`);
         const url = await this.minio.upload({
           bucket: 'videos',
           objectName: uniqueName,
-          buffer: file.buffer,
-          contentType: file.mimetype,
+          buffer: fileBuffer,
+          contentType: file.mimetype || 'video/mp4',
         });
         return { url: typeof url === 'string' ? url : (url as any).url || url };
       } catch (err) {
@@ -399,23 +403,14 @@ export class FilesController {
     }
 
     try {
-      if (!file.filename && file.buffer) {
-        const dest = join(process.cwd(), 'uploads', 'videos');
-        ensureDir(dest);
-        const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
-        writeFileSync(join(dest, filename), file.buffer);
-        return {
-          url: `/uploads/videos/${filename}`,
-          objectName: filename,
-        };
-      }
-      if (file.filename) {
-        return {
-          url: `/uploads/videos/${file.filename}`,
-          objectName: file.filename,
-        };
-      }
-      throw new Error('No local file data available');
+      const dest = join(process.cwd(), 'uploads', 'videos');
+      ensureDir(dest);
+      const filename = uniqueName;
+      writeFileSync(join(dest, filename), fileBuffer);
+      return {
+        url: `/uploads/videos/${filename}`,
+        objectName: filename,
+      };
     } catch (err) {
       console.error(`[FilesController] Local video fallback failed: ${err.message}`);
       return {
