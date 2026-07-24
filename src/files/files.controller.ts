@@ -393,6 +393,41 @@ export class FilesController {
       return;
     }
     try {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Authorization');
+
+      // 1. Direct S3 streaming via MinIO client
+      if (this.minio.isEnabled()) {
+        const match = url.match(/\/(audio|play-audio)\/([^?]+)(\?.*)?$/);
+        if (match && match[2]) {
+          const bucket = match[1];
+          const objectName = match[2];
+          try {
+            const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
+            if (stat?.metaData?.['content-type'] || stat?.contentType) {
+              res.setHeader('Content-Type', stat.metaData?.['content-type'] || stat.contentType);
+            } else if (objectName.endsWith('.m3u8')) {
+              res.setHeader('Content-Type', 'application/x-mpegURL');
+            } else if (objectName.endsWith('.ts')) {
+              res.setHeader('Content-Type', 'video/mp2t');
+            } else if (objectName.endsWith('.mp3')) {
+              res.setHeader('Content-Type', 'audio/mpeg');
+            }
+            if (stat?.size) {
+              res.setHeader('Content-Length', stat.size);
+            }
+            res.setHeader('Accept-Ranges', 'bytes');
+            res.status(200);
+            stream.pipe(res);
+            return;
+          } catch (err) {
+            console.warn('[resolvedAudio] MinIO getObjectStream failed, trying HTTP fetch:', err.message);
+          }
+        }
+      }
+
+      // 2. HTTP fetch fallback
       let target = url;
       if (!target.startsWith('http://') && !target.startsWith('https://')) {
         const publicUrl = process.env.MINIO_PUBLIC_URL || 'http://localhost:9000';
@@ -405,36 +440,17 @@ export class FilesController {
         headers.Range = range;
       }
 
-      let upstream = await fetch(target, { headers }).catch((err) => {
+      const upstream = await fetch(target, { headers }).catch((err) => {
         console.log('[resolvedAudio] Direct fetch failed:', err.message);
         return null;
       });
 
-      if ((!upstream || !upstream.ok) && this.minio.isEnabled()) {
-        try {
-          const match = target.match(/\/(audio|play-audio)\/([^?]+)(\?.*)?$/);
-          if (match && match[2]) {
-            const bucket = match[1] === 'play-audio' ? 'play-audio' : 'audio';
-            const objectName = match[2];
-            const presignedUrl = await this.minio.presignGet({
-              bucket: bucket as any,
-              objectName,
-            });
-            upstream = await fetch(presignedUrl, { headers }).catch(() => null);
-          }
-        } catch (err) {
-          console.error('[resolvedAudio] Presign fallback error:', err.message);
-        }
-      }
-
-      if (!upstream) {
-        res.status(404).send('Audio stream not found');
+      if (!upstream || !upstream.ok) {
+        res.status(upstream ? upstream.status : 404).send('Audio stream not found');
         return;
       }
 
       res.status(upstream.status);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
       const passHeaders = [
         'content-type',
         'content-length',
@@ -469,6 +485,41 @@ export class FilesController {
     }
 
     try {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Authorization');
+
+      // 1. Direct S3 streaming via MinIO client
+      if (this.minio.isEnabled()) {
+        const match = url.match(/\/(videos|play-videos)\/([^?]+)(\?.*)?$/);
+        if (match && match[2]) {
+          const bucket = match[1];
+          const objectName = match[2];
+          try {
+            const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
+            if (stat?.metaData?.['content-type'] || stat?.contentType) {
+              res.setHeader('Content-Type', stat.metaData?.['content-type'] || stat.contentType);
+            } else if (objectName.endsWith('.m3u8')) {
+              res.setHeader('Content-Type', 'application/x-mpegURL');
+            } else if (objectName.endsWith('.ts')) {
+              res.setHeader('Content-Type', 'video/mp2t');
+            } else if (objectName.endsWith('.mp4')) {
+              res.setHeader('Content-Type', 'video/mp4');
+            }
+            if (stat?.size) {
+              res.setHeader('Content-Length', stat.size);
+            }
+            res.setHeader('Accept-Ranges', 'bytes');
+            res.status(200);
+            stream.pipe(res);
+            return;
+          } catch (err) {
+            console.warn('[resolvedVideo] MinIO getObjectStream failed, trying HTTP fetch:', err.message);
+          }
+        }
+      }
+
+      // 2. HTTP fetch fallback
       let target = url;
       if (!target.startsWith('http://') && !target.startsWith('https://')) {
         const publicUrl = process.env.MINIO_PUBLIC_URL || 'http://localhost:9000';
@@ -481,36 +532,17 @@ export class FilesController {
         headers.Range = range;
       }
 
-      let upstream = await fetch(target, { headers }).catch((err) => {
+      const upstream = await fetch(target, { headers }).catch((err) => {
         console.log('[resolvedVideo] Direct fetch failed:', err.message);
         return null;
       });
 
-      if ((!upstream || !upstream.ok) && this.minio.isEnabled()) {
-        try {
-          const match = target.match(/\/(videos|play-videos)\/([^?]+)(\?.*)?$/);
-          if (match && match[2]) {
-            const bucket = match[1] === 'play-videos' ? 'play-videos' : 'videos';
-            const objectName = match[2];
-            const presignedUrl = await this.minio.presignGet({
-              bucket: bucket as any,
-              objectName,
-            });
-            upstream = await fetch(presignedUrl, { headers }).catch(() => null);
-          }
-        } catch (err) {
-          console.error('[resolvedVideo] Presign fallback error:', err.message);
-        }
-      }
-
-      if (!upstream) {
-        res.status(404).send('Video stream not found');
+      if (!upstream || !upstream.ok) {
+        res.status(upstream ? upstream.status : 404).send('Video stream not found');
         return;
       }
 
       res.status(upstream.status);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
       const passHeaders = [
         'content-type',
         'content-length',

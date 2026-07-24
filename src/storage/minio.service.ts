@@ -173,6 +173,21 @@ export class MinioService {
     return url;
   }
 
+  async getObjectStream(
+    bucket: string,
+    objectName: string,
+  ): Promise<{ stream: any; stat?: any }> {
+    if (!this.client) {
+      throw new Error('MinIO not configured');
+    }
+    const bucketName =
+      (this.cfg.buckets?.[bucket as any] as string) || bucket;
+    await this.ensureBucket(bucketName);
+    const stat = await this.client.statObject(bucketName, objectName).catch(() => null);
+    const stream = await this.client.getObject(bucketName, objectName);
+    return { stream, stat };
+  }
+
   refreshUrl(url: string | null | undefined): string | null {
     if (!url) return null;
     const isProduction =
