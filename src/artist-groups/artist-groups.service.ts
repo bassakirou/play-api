@@ -7,13 +7,15 @@ export class ArtistGroupsService {
   constructor(private prisma: PrismaService) {}
 
   create(dto: CreateArtistGroupDto) {
+    const data: any = {
+      name: dto.name,
+      imageUrl: dto.imageUrl || null,
+      ...(dto.memberIds && dto.memberIds.length
+        ? { members: { connect: dto.memberIds.map((id) => ({ id })) } }
+        : {}),
+    };
     return this.prisma.artistGroup.create({
-      data: {
-        name: dto.name,
-        ...(dto.memberIds && dto.memberIds.length
-          ? { members: { connect: dto.memberIds.map((id) => ({ id })) } }
-          : {}),
-      },
+      data,
     });
   }
 
@@ -29,14 +31,16 @@ export class ArtistGroupsService {
   }
 
   update(id: string, dto: CreateArtistGroupDto) {
+    const data: any = {
+      name: dto.name,
+      ...(typeof dto.imageUrl !== 'undefined' ? { imageUrl: dto.imageUrl || null } : {}),
+      ...(dto.memberIds
+        ? { members: { set: dto.memberIds.map((mid) => ({ id: mid })) } }
+        : {}),
+    };
     return this.prisma.artistGroup.update({
       where: { id },
-      data: {
-        name: dto.name,
-        ...(dto.memberIds
-          ? { members: { set: dto.memberIds.map((mid) => ({ id: mid })) } }
-          : {}),
-      },
+      data,
     });
   }
 

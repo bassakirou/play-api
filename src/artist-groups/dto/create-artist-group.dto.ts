@@ -18,4 +18,9 @@ export class CreateArtistGroupDto {
   @IsOptional()
   @IsUUID('all', { each: true })
   memberIds?: string[];
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
 }

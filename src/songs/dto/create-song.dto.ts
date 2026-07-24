@@ -34,11 +34,11 @@ export class CreateSongDto {
   @IsNotEmpty()
   audioUrl: string;
 
-  @ApiProperty({ type: [String] })
+  @ApiProperty({ required: false, type: [String] })
   @IsArray()
-  @ArrayMinSize(1)
+  @IsOptional()
   @IsUUID('all', { each: true })
-  artistIds: string[];
+  artistIds?: string[];
 
   @ApiProperty({ required: false, type: [String] })
   @IsArray()
@@ -51,7 +51,14 @@ export class CreateSongDto {
   @IsOptional()
   albumId?: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsUUID()
-  genreId: string;
+  @IsOptional()
+  genreId?: string;
+
+  @ApiProperty({ required: false, type: [String] })
+  @IsArray()
+  @IsOptional()
+  @IsUUID('all', { each: true })
+  genreIds?: string[];
 }

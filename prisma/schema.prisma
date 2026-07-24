@@ -70,6 +70,7 @@ model Artist {
 model ArtistGroup {
   id        String   @id @default(uuid())
   name      String
+  imageUrl  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   members   Artist[] @relation("ArtistGroupMembers")

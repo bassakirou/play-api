@@ -37,7 +37,15 @@ export class AlbumsService {
     }
 
     const albums = await this.prisma.album.findMany({
-      include: { artist: true, songs: true },
+      include: {
+        artist: true,
+        songs: {
+          include: {
+            groups: true,
+            artists: true,
+          },
+        },
+      },
     });
     return Promise.all(
       albums.map(async (a) => ({
@@ -50,7 +58,15 @@ export class AlbumsService {
   async findOne(id: string) {
     const a = await this.prisma.album.findUnique({
       where: { id },
-      include: { artist: true, songs: true },
+      include: {
+        artist: true,
+        songs: {
+          include: {
+            groups: true,
+            artists: true,
+          },
+        },
+      },
     });
     if (!a) return null;
     return {
