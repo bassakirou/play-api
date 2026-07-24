@@ -85,7 +85,7 @@ export class ArtistsService {
     if (!artist) return null;
 
     // Get related artists (same genre from most recent songs)
-    const genreIds = artist.songs.map((s) => s.genreId);
+    const genreIds = artist.songs.map((s) => s.genreId).filter((id): id is string => !!id);
     const relatedArtists = await this.prisma.artist.findMany({
       where: {
         id: { not: id },

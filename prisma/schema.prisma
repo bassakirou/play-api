@@ -97,11 +97,12 @@ model Song {
   isSingle    Boolean       @default(false)
   audioUrl    String
   albumId     String?
-  genreId     String
+  genreId     String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   album       Album?        @relation(fields: [albumId], references: [id])
-  genre       Genre         @relation(fields: [genreId], references: [id])
+  genre       Genre?        @relation(fields: [genreId], references: [id])
+  genres      Genre[]       @relation("SongGenres")
   playlists   Playlist[]    @relation("PlaylistSongs")
   artists     Artist[]      @relation("SongArtists")
   groups      ArtistGroup[] @relation("SongGroups")
@@ -117,6 +118,7 @@ model Genre {
   updatedAt   DateTime @updatedAt
   createdBy   User?    @relation(fields: [createdById], references: [id])
   songs       Song[]
+  songList    Song[]   @relation("SongGenres")
   videos      Video[]
 }
 

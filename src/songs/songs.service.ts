@@ -15,7 +15,7 @@ export class SongsService {
 
   async findAll() {
     const songs = await this.prisma.song.findMany({
-      include: { artists: true, groups: true, album: true, genre: true },
+      include: { artists: true, groups: true, album: true, genre: true, genres: true },
     });
     return songs.map((s) => ({
       ...s,
@@ -27,7 +27,7 @@ export class SongsService {
   async findOne(id: string) {
     const s = await this.prisma.song.findUnique({
       where: { id },
-      include: { artists: true, groups: true, album: true, genre: true },
+      include: { artists: true, groups: true, album: true, genre: true, genres: true },
     });
     if (!s) return null;
     return {
@@ -54,12 +54,19 @@ export class SongsService {
       albumId,
       coverUrl,
       genreId,
+      genreIds,
     } = dto;
 
     const finalArtistIds: string[] = Array.isArray(artistIds)
       ? artistIds
       : artistId
         ? [artistId]
+        : [];
+
+    const finalGenreIds: string[] = Array.isArray(genreIds) && genreIds.length > 0
+      ? genreIds
+      : genreId
+        ? [genreId]
         : [];
 
     const isSingle = albumId ? false : (rawIsSingle ?? true);
@@ -74,9 +81,11 @@ export class SongsService {
       }
     }
 
-    if (!genreId) {
-      throw new BadRequestException('genreId is required');
+    if (finalGenreIds.length === 0) {
+      throw new BadRequestException('genreId or genreIds is required');
     }
+
+    const primaryGenreId = finalGenreIds[0];
 
     const data: any = {
       title,
@@ -84,7 +93,8 @@ export class SongsService {
       audioUrl,
       isSingle,
       coverUrl: coverUrl || null,
-      genre: { connect: { id: genreId } },
+      ...(primaryGenreId ? { genre: { connect: { id: primaryGenreId } } } : {}),
+      genres: { connect: finalGenreIds.map((gid) => ({ id: gid })) },
       ...(isSingle ? {} : { album: { connect: { id: albumId } } }),
       ...(finalArtistIds.length > 0
         ? { artists: { connect: finalArtistIds.map((id) => ({ id })) } }
@@ -110,6 +120,7 @@ export class SongsService {
       albumId,
       coverUrl,
       genreId,
+      genreIds,
     } = updateSongDto || {};
 
     const cleanAlbumId =
@@ -137,8 +148,15 @@ export class SongsService {
       updateData.album = { connect: { id: cleanAlbumId } };
     }
 
-    if (genreId) {
-      updateData.genre = { connect: { id: genreId } };
+    const finalGenreIds: string[] | undefined = Array.isArray(genreIds)
+      ? genreIds
+      : genreId
+        ? [genreId]
+        : undefined;
+
+    if (finalGenreIds && finalGenreIds.length > 0) {
+      updateData.genre = { connect: { id: finalGenreIds[0] } };
+      updateData.genres = { set: finalGenreIds.map((gid: string) => ({ id: gid })) };
     }
 
     if (Array.isArray(artistIds)) {
