@@ -11,9 +11,16 @@ export class AlbumsService {
   ) {}
 
   async create(createAlbumDto: CreateAlbumDto) {
-    // Logic to check if user owns the artist or is the artist
+    const { title, year, coverUrl, description, artistId } = createAlbumDto;
+    const data: any = {
+      title,
+      year,
+      coverUrl: coverUrl || null,
+      description: description || null,
+      ...(artistId ? { artist: { connect: { id: artistId } } } : {}),
+    };
     return this.prisma.album.create({
-      data: createAlbumDto,
+      data,
     });
   }
 
