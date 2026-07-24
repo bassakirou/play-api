@@ -430,6 +430,7 @@ export class FilesController {
       res.status(400).send('Missing url');
       return;
     }
+    console.log(`[resolvedAudio] Incoming request for url="${url}"`);
     try {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
@@ -438,11 +439,13 @@ export class FilesController {
       // 1. Direct S3 streaming via MinIO client
       if (this.minio.isEnabled()) {
         const match = url.match(/\/(audio|play-audio)\/([^?]+)(\?.*)?$/);
+        console.log(`[resolvedAudio] MinIO enabled. Regex match:`, match ? { bucket: match[1], objectName: match[2] } : 'NO MATCH');
         if (match && match[2]) {
           const bucket = match[1];
           const objectName = match[2];
           try {
             const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
+            console.log(`[resolvedAudio] ✓ getObjectStream succeeded for bucket="${bucket}", object="${objectName}"`);
             if (objectName.endsWith('.m3u8')) {
               const text = await streamToString(stream);
               const baseDirUrl = url.substring(0, url.lastIndexOf('/') + 1);
@@ -482,9 +485,11 @@ export class FilesController {
             stream.pipe(res);
             return;
           } catch (err) {
-            console.warn('[resolvedAudio] MinIO getObjectStream failed, trying HTTP fetch:', err.message);
+            console.warn(`[resolvedAudio] MinIO getObjectStream FAILED for bucket="${bucket}", object="${objectName}":`, err.code || err.message);
           }
         }
+      } else {
+        console.log('[resolvedAudio] MinIO is NOT enabled');
       }
 
       // 2. Local disk check for /uploads/ files

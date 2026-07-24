@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { Client as MinioClient } from 'minio';
 import { Buffer } from 'buffer';
 
@@ -18,10 +18,12 @@ export type MinioConfig = {
 };
 
 @Injectable()
-export class MinioService {
+export class MinioService implements OnModuleInit {
   private client: MinioClient | null = null;
   private presignClient: MinioClient | null = null;
   private cfg: MinioConfig;
+  /** Track buckets whose policies have already been set this process lifetime */
+  private policyApplied = new Set<string>();
 
   constructor(@Optional() cfg?: MinioConfig) {
     this.cfg = cfg || {
@@ -74,19 +76,40 @@ export class MinioService {
     }
   }
 
+  /**
+   * On API startup, list ALL existing MinIO buckets and apply
+   * a public-read policy to each one.  This is the definitive fix
+   * for old buckets (play-audio, play-videos, etc.) that were
+   * created without a public policy.
+   */
+  async onModuleInit() {
+    if (!this.client) return;
+    try {
+      console.log('[MinioService] onModuleInit – fixing policies for ALL existing buckets …');
+      const buckets = await this.client.listBuckets();
+      for (const b of buckets) {
+        await this.ensureBucketPolicy(b.name);
+      }
+      console.log(
+        `[MinioService] onModuleInit – policies applied to ${buckets.length} bucket(s): ${buckets.map((b) => b.name).join(', ')}`,
+      );
+    } catch (err) {
+      console.error('[MinioService] onModuleInit – failed to list/fix buckets:', err.message);
+    }
+  }
+
   isEnabled() {
     return !!this.client;
   }
 
-  async ensureBucket(name: string) {
+  /**
+   * Apply a public-read S3 policy to a bucket (idempotent – skips
+   * if already applied during this process lifetime).
+   */
+  private async ensureBucketPolicy(name: string) {
     if (!this.client) return;
+    if (this.policyApplied.has(name)) return;
     try {
-      const exists = await this.client.bucketExists(name);
-      if (!exists) {
-        console.log(`[MinioService] Creating bucket: ${name}`);
-        await this.client.makeBucket(name, 'us-east-1'); // Region is often needed
-      }
-      // Ensure public read policy so browser audio/video elements and HLS streams can access files without 403
       const policy = {
         Version: '2012-10-17',
         Statement: [
@@ -99,12 +122,28 @@ export class MinioService {
         ],
       };
       await this.client.setBucketPolicy(name, JSON.stringify(policy));
+      this.policyApplied.add(name);
+      console.log(`[MinioService] Public-read policy applied to bucket "${name}"`);
+    } catch (err) {
+      console.warn(`[MinioService] Could not set policy on bucket "${name}":`, err.message);
+    }
+  }
+
+  async ensureBucket(name: string) {
+    if (!this.client) return;
+    try {
+      const exists = await this.client.bucketExists(name);
+      if (!exists) {
+        console.log(`[MinioService] Creating bucket: ${name}`);
+        await this.client.makeBucket(name, 'us-east-1');
+      }
+      // Ensure public read policy so browser audio/video elements and HLS streams can access files without 403
+      await this.ensureBucketPolicy(name);
     } catch (error) {
       console.error(
         `[MinioService] Error ensuring bucket ${name}:`,
         error.message,
       );
-      // We don't throw here to allow the upload to attempt, but it's a red flag
     }
   }
 
@@ -195,22 +234,37 @@ export class MinioService {
       `hls/${strippedObj}`,
     ].filter((o, i, a) => o && a.indexOf(o) === i);
 
+    console.log(
+      `[getObjectStream] Searching for object "${objectName}" — candidate buckets: [${candidateBuckets.join(', ')}], candidate objects: [${candidateObjects.join(', ')}]`,
+    );
+
+    // Ensure public-read policies on all candidate buckets before trying
+    for (const b of candidateBuckets) {
+      try {
+        const exists = await this.client.bucketExists(b);
+        if (exists) {
+          await this.ensureBucketPolicy(b);
+        }
+      } catch { /* bucket does not exist, skip */ }
+    }
+
     let lastError: any = null;
     for (const b of candidateBuckets) {
       for (const obj of candidateObjects) {
         try {
-          const stat = await this.client.statObject(b, obj).catch(() => null);
+          const stat = await this.client.statObject(b, obj);
+          console.log(`[getObjectStream] statObject OK: bucket="${b}", object="${obj}", size=${stat?.size}`);
           const stream = await this.client.getObject(b, obj);
-          console.log(`[getObjectStream] Found ${obj} in bucket ${b}`);
+          console.log(`[getObjectStream] ✓ Streaming "${obj}" from bucket "${b}"`);
           return { stream, stat };
         } catch (err) {
+          console.log(`[getObjectStream] ✗ bucket="${b}", object="${obj}" → ${err.code || err.message}`);
           lastError = err;
         }
       }
     }
     console.error(
-      `[getObjectStream] Could not find object ${objectName} (candidates: ${candidateObjects.join(', ')}) in buckets [${candidateBuckets.join(', ')}]:`,
-      lastError?.message,
+      `[getObjectStream] FAILED: object "${objectName}" not found in any candidate bucket/object combination`,
     );
     throw lastError || new Error(`Object ${objectName} not found in buckets: ${candidateBuckets.join(', ')}`);
   }
