@@ -17,7 +17,7 @@ import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { MinioService } from '../storage/minio.service';
 import { VercelBlobService } from '../storage/vercel-blob.service';
 import { HlsTranscoderService } from '../storage/hls-transcoder.service';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { Readable } from 'stream';
 
 function ensureDir(path: string) {
@@ -140,15 +140,10 @@ export class FilesController {
 
   @Post('upload-audio')
   @UseInterceptors(
-    FileInterceptor(
-      'file',
-      process.env.BLOB_READ_WRITE_TOKEN || process.env.MINIO_ENDPOINT
-        ? { storage: memoryStorage(), limits: { fileSize: 1024 * 1024 * 100 } }
-        : {
-          storage: diskAudioStorage(),
-          limits: { fileSize: 1024 * 1024 * 100 },
-        },
-    ),
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 1024 * 1024 * 500 },
+    }),
   )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -164,8 +159,10 @@ export class FilesController {
     const isProduction =
       process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
 
-    // 1. En PRODUCTION : Priorité absolue à Vercel Blob
-    if (isProduction && this.blob.isEnabled()) {
+    const fileBuffer = file.buffer || ((file as any).path ? readFileSync((file as any).path) : null);
+
+    // 1. En PRODUCTION : Priorité à Vercel Blob s'il est activé
+    if (isProduction && this.blob.isEnabled() && fileBuffer) {
       try {
         const objectName = `audio/${uniqueName}`;
         console.log(
@@ -173,7 +170,7 @@ export class FilesController {
         );
         const url = await this.blob.upload({
           objectName,
-          buffer: file.buffer,
+          buffer: fileBuffer,
           contentType: file.mimetype,
         });
         return { url };
@@ -184,8 +181,8 @@ export class FilesController {
       }
     }
 
-    // 2. En LOCAL (ou fallback production) : Utilisation de Minio
-    if (this.minio.isEnabled()) {
+    // 2. En LOCAL (ou MinIO sur VPS)
+    if (this.minio.isEnabled() && fileBuffer) {
       try {
         const env = isProduction ? 'Production Fallback' : 'Local';
         console.log(
@@ -193,26 +190,33 @@ export class FilesController {
         );
         const url = await this.minio.upload({
           bucket: 'audio',
-          objectName: uniqueName, // On enlève le préfixe audio/ ici car le bucket s'appelle déjà audio
-          buffer: file.buffer,
-          contentType: file.mimetype,
+          objectName: uniqueName,
+          buffer: fileBuffer,
+          contentType: file.mimetype || 'audio/mpeg',
         });
-        // On s'assure de renvoyer un objet JSON { url: "..." }
         return { url: typeof url === 'string' ? url : (url as any).url || url };
       } catch (err) {
-        console.error(`[FilesController] Minio upload failed: ${err.message}`);
+        console.error(`[FilesController] Minio audio upload failed: ${err.message}`);
       }
     }
 
     // 3. Fallback Local (disque)
-    if (file.filename) {
-      return {
-        url: `/uploads/audio/${file.filename}`,
-        objectName: file.filename,
-      };
+    try {
+      if (fileBuffer) {
+        const dest = join(process.cwd(), 'uploads', 'audio');
+        ensureDir(dest);
+        const filename = uniqueName;
+        writeFileSync(join(dest, filename), fileBuffer);
+        return {
+          url: `/uploads/audio/${filename}`,
+          objectName: filename,
+        };
+      }
+    } catch (err) {
+      console.error(`[FilesController] Local audio fallback failed: ${err.message}`);
     }
 
-    throw new Error('All upload storage attempts failed');
+    throw new Error('All audio upload storage attempts failed');
   }
 
   @Post('upload-image')
@@ -391,11 +395,12 @@ export class FilesController {
     try {
       let target = url;
       if (!target.includes('public.blob.vercel-storage.com') && this.minio.isEnabled()) {
-        const match = target.match(/\/audio\/([^?]+)(\?.*)?$/);
-        if (match && match[1]) {
-          const objectName = match[1];
+        const match = target.match(/\/(audio|play-audio)\/([^?]+)(\?.*)?$/);
+        if (match && match[2]) {
+          const bucket = match[1] === 'play-audio' ? 'play-audio' : 'audio';
+          const objectName = match[2];
           target = await this.minio.presignGet({
-            bucket: 'audio',
+            bucket: bucket as any,
             objectName,
           });
         }
@@ -410,6 +415,8 @@ export class FilesController {
       const upstream = await fetch(target, { headers });
 
       res.status(upstream.status);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
       const passHeaders = [
         'content-type',
         'content-length',
@@ -445,11 +452,12 @@ export class FilesController {
     try {
       let target = url;
       if (!target.includes('public.blob.vercel-storage.com') && this.minio.isEnabled()) {
-        const match = target.match(/\/videos\/([^?]+)(\?.*)?$/);
-        if (match && match[1]) {
-          const objectName = match[1];
+        const match = target.match(/\/(videos|play-videos)\/([^?]+)(\?.*)?$/);
+        if (match && match[2]) {
+          const bucket = match[1] === 'play-videos' ? 'play-videos' : 'videos';
+          const objectName = match[2];
           target = await this.minio.presignGet({
-            bucket: 'videos',
+            bucket: bucket as any,
             objectName,
           });
         }
@@ -464,6 +472,8 @@ export class FilesController {
       const upstream = await fetch(target, { headers });
 
       res.status(upstream.status);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
       const passHeaders = [
         'content-type',
         'content-length',
