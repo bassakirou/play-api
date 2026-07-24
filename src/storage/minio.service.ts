@@ -79,6 +79,19 @@ export class MinioService {
         console.log(`[MinioService] Creating bucket: ${name}`);
         await this.client.makeBucket(name, 'us-east-1'); // Region is often needed
       }
+      // Ensure public read policy so browser audio/video elements and HLS streams can access files without 403
+      const policy = {
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: { AWS: ['*'] },
+            Action: ['s3:GetObject'],
+            Resource: [`arn:aws:s3:::${name}/*`],
+          },
+        ],
+      };
+      await this.client.setBucketPolicy(name, JSON.stringify(policy));
     } catch (error) {
       console.error(
         `[MinioService] Error ensuring bucket ${name}:`,
