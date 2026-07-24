@@ -89,16 +89,44 @@ export class FilesController {
       return;
     }
     try {
-      let target = url;
-      if (!target.includes('public.blob.vercel-storage.com') && this.minio.isEnabled()) {
-        const match = target.match(/\/images\/([^?]+)(\?.*)?$/);
-        if (match && match[1]) {
-          const objectName = match[1];
-          target = await this.minio.presignGet({
-            bucket: 'images',
-            objectName,
-          });
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+
+      // 1. Direct S3 streaming via MinIO client
+      if (this.minio.isEnabled()) {
+        const match = url.match(/\/(images|play-images)\/([^?]+)(\?.*)?$/);
+        if (match && match[2]) {
+          const bucket = match[1];
+          const objectName = match[2];
+          try {
+            const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
+            if (stat?.metaData?.['content-type'] || stat?.contentType) {
+              res.setHeader('Content-Type', stat.metaData?.['content-type'] || stat.contentType);
+            } else if (objectName.endsWith('.png')) {
+              res.setHeader('Content-Type', 'image/png');
+            } else if (objectName.endsWith('.webp')) {
+              res.setHeader('Content-Type', 'image/webp');
+            } else {
+              res.setHeader('Content-Type', 'image/jpeg');
+            }
+            if (stat?.size) {
+              res.setHeader('Content-Length', stat.size);
+            }
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            res.status(200);
+            stream.pipe(res);
+            return;
+          } catch (err) {
+            console.warn('[resolvedImage] MinIO getObjectStream failed, trying HTTP fetch:', err.message);
+          }
         }
+      }
+
+      // 2. HTTP fetch fallback
+      let target = url;
+      if (!target.startsWith('http://') && !target.startsWith('https://')) {
+        const publicUrl = process.env.MINIO_PUBLIC_URL || 'http://localhost:9000';
+        target = `${publicUrl.replace(/\/+$/, '')}/${target.replace(/^\/+/, '')}`;
       }
 
       const headers: Record<string, string> = {};
@@ -107,9 +135,9 @@ export class FilesController {
         headers.Range = range;
       }
 
-      const upstream = await fetch(target, { headers });
+      const upstream = await fetch(target, { headers }).catch(() => null);
 
-      if (upstream.status === 404) {
+      if (!upstream || upstream.status === 404) {
         const pixel = Buffer.from(
           'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xh8cAAAAASUVORK5CYII=',
           'base64',
@@ -142,8 +170,9 @@ export class FilesController {
       }
 
       Readable.fromWeb(upstream.body as any).pipe(res);
-    } catch {
-      res.status(500).send('Failed to resolve image');
+    } catch (err) {
+      console.error('[resolvedImage] Critical error:', err.message);
+      res.status(500).send(`Failed to resolve image: ${err.message}`);
     }
   }
 
