@@ -25,11 +25,11 @@ export class MinioService {
 
   constructor(@Optional() cfg?: MinioConfig) {
     this.cfg = cfg || {
-      endPoint: process.env.MINIO_ENDPOINT,
-      port: process.env.MINIO_PORT ? Number(process.env.MINIO_PORT) : undefined,
+      endPoint: process.env.MINIO_ENDPOINT || '127.0.0.1',
+      port: process.env.MINIO_PORT ? Number(process.env.MINIO_PORT) : 9000,
       useSSL: process.env.MINIO_USE_SSL === 'true',
-      accessKey: process.env.MINIO_ACCESS_KEY,
-      secretKey: process.env.MINIO_SECRET_KEY,
+      accessKey: process.env.MINIO_ACCESS_KEY || 'admin',
+      secretKey: process.env.MINIO_SECRET_KEY || 'admin123',
       publicUrl:
         process.env.MINIO_PUBLIC_URL ||
         (process.env.NODE_ENV === 'production' || !!process.env.VERCEL
@@ -188,16 +188,30 @@ export class MinioService {
       `play-${rawBucket.replace(/^play-/, '')}`,
     ].filter((b, i, a) => b && a.indexOf(b) === i);
 
+    const strippedObj = objectName.replace(/^hls\//, '');
+    const candidateObjects = [
+      objectName,
+      strippedObj,
+      `hls/${strippedObj}`,
+    ].filter((o, i, a) => o && a.indexOf(o) === i);
+
     let lastError: any = null;
     for (const b of candidateBuckets) {
-      try {
-        const stat = await this.client.statObject(b, objectName).catch(() => null);
-        const stream = await this.client.getObject(b, objectName);
-        return { stream, stat };
-      } catch (err) {
-        lastError = err;
+      for (const obj of candidateObjects) {
+        try {
+          const stat = await this.client.statObject(b, obj).catch(() => null);
+          const stream = await this.client.getObject(b, obj);
+          console.log(`[getObjectStream] Found ${obj} in bucket ${b}`);
+          return { stream, stat };
+        } catch (err) {
+          lastError = err;
+        }
       }
     }
+    console.error(
+      `[getObjectStream] Could not find object ${objectName} (candidates: ${candidateObjects.join(', ')}) in buckets [${candidateBuckets.join(', ')}]:`,
+      lastError?.message,
+    );
     throw lastError || new Error(`Object ${objectName} not found in buckets: ${candidateBuckets.join(', ')}`);
   }
 

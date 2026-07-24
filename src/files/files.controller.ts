@@ -17,7 +17,7 @@ import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { MinioService } from '../storage/minio.service';
 import { VercelBlobService } from '../storage/vercel-blob.service';
 import { HlsTranscoderService } from '../storage/hls-transcoder.service';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, createReadStream } from 'fs';
 import { Readable } from 'stream';
 
 async function streamToString(stream: any): Promise<string> {
@@ -487,7 +487,22 @@ export class FilesController {
         }
       }
 
-      // 2. HTTP fetch fallback
+      // 2. Local disk check for /uploads/ files
+      if (url.includes('/uploads/')) {
+        const relativePath = url.substring(url.indexOf('/uploads/'));
+        const diskPath = join(process.cwd(), relativePath);
+        if (existsSync(diskPath)) {
+          if (diskPath.endsWith('.mp3')) res.setHeader('Content-Type', 'audio/mpeg');
+          else if (diskPath.endsWith('.m3u8')) res.setHeader('Content-Type', 'application/x-mpegURL');
+          else if (diskPath.endsWith('.ts')) res.setHeader('Content-Type', 'video/mp2t');
+          res.setHeader('Accept-Ranges', 'bytes');
+          res.status(200);
+          createReadStream(diskPath).pipe(res);
+          return;
+        }
+      }
+
+      // 3. HTTP fetch fallback
       let target = url;
       if (!target.startsWith('http://') && !target.startsWith('https://')) {
         const publicUrl = process.env.MINIO_PUBLIC_URL || 'http://localhost:9000';
