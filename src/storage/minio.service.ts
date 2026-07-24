@@ -30,7 +30,7 @@ export class MinioService {
       useSSL: process.env.MINIO_USE_SSL === 'true',
       accessKey: process.env.MINIO_ACCESS_KEY,
       secretKey: process.env.MINIO_SECRET_KEY,
-      publicUrl: process.env.MINIO_PUBLIC_URL || 'https://media.pyramidplay.cm',
+      publicUrl: process.env.MINIO_PUBLIC_URL || 'http://localhost:9000',
       buckets: {
         audio: process.env.MINIO_BUCKET_AUDIO || 'audio',
         images: process.env.MINIO_BUCKET_IMAGES || 'images',
@@ -147,5 +147,14 @@ export class MinioService {
       responseHeaders,
     );
     return url;
+  }
+
+  refreshUrl(url: string | null | undefined): string | null {
+    if (!url) return null;
+    const publicUrl = (process.env.MINIO_PUBLIC_URL || 'http://localhost:9000').replace(/\/+$/, '');
+    return url
+      .replace('https://media.pyramidplay.cm', publicUrl)
+      .replace('http://localhost:9000', publicUrl)
+      .replace('http://127.0.0.1:9000', publicUrl);
   }
 }

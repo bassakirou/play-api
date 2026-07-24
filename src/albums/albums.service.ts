@@ -18,6 +18,17 @@ export class AlbumsService {
   }
 
   async findAll() {
+    // Nettoyage automatique des albums orphelins sans aucune chanson rattachée
+    const emptyAlbums = await this.prisma.album.findMany({
+      where: { songs: { none: {} } },
+      select: { id: true },
+    });
+    if (emptyAlbums.length > 0) {
+      await this.prisma.album.deleteMany({
+        where: { id: { in: emptyAlbums.map((a) => a.id) } },
+      });
+    }
+
     const albums = await this.prisma.album.findMany({
       include: { artist: true, songs: true },
     });
@@ -41,10 +52,8 @@ export class AlbumsService {
     };
   }
 
-  private refreshUrl(url: string) {
-    if (!url) return url;
-    const cleanUrl = url.replace('http://localhost:9000', 'https://media.pyramidplay.cm');
-    return cleanUrl;
+  private refreshUrl(url: string | null | undefined) {
+    return this.minio.refreshUrl(url);
   }
 
   update(id: string, updateAlbumDto: any) {

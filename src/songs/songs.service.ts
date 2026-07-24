@@ -17,17 +17,11 @@ export class SongsService {
     const songs = await this.prisma.song.findMany({
       include: { artists: true, groups: true, album: true, genre: true },
     });
-    return Promise.all(
-      songs.map(async (s) => ({
-        ...s,
-        audioUrl: s.audioUrl
-          ? await this.refreshUrl(s.audioUrl, 'audio')
-          : null,
-        coverUrl: s.coverUrl
-          ? await this.refreshUrl(s.coverUrl, 'images')
-          : null,
-      })),
-    );
+    return songs.map((s) => ({
+      ...s,
+      audioUrl: this.refreshUrl(s.audioUrl),
+      coverUrl: this.refreshUrl(s.coverUrl),
+    }));
   }
 
   async findOne(id: string) {
@@ -38,36 +32,36 @@ export class SongsService {
     if (!s) return null;
     return {
       ...s,
-      audioUrl: s.audioUrl ? await this.refreshUrl(s.audioUrl, 'audio') : null,
-      coverUrl: s.coverUrl ? await this.refreshUrl(s.coverUrl, 'images') : null,
+      audioUrl: this.refreshUrl(s.audioUrl),
+      coverUrl: this.refreshUrl(s.coverUrl),
     };
   }
 
-  private refreshUrl(url: string, _bucket: 'audio' | 'images') {
-    if (!url) return url;
-    const cleanUrl = url.replace('http://localhost:9000', 'https://media.pyramidplay.cm');
-    return cleanUrl;
+  private refreshUrl(url: string | null | undefined) {
+    return this.minio.refreshUrl(url);
   }
 
   create(createSongDto: CreateSongDto) {
     const dto = createSongDto as unknown as Record<string, any>;
     const {
+      title,
+      duration,
+      audioUrl,
       artistIds,
       groupIds,
       artistId,
       isSingle: rawIsSingle,
       albumId,
       coverUrl,
-      ...rest
+      genreId,
     } = dto;
+
     const finalArtistIds: string[] = Array.isArray(artistIds)
       ? artistIds
       : artistId
         ? [artistId]
         : [];
 
-    // Détermination intelligente de isSingle
-    // Si un albumId est présent, ce n'est PAS un single, peu importe ce que dit le front
     const isSingle = albumId ? false : (rawIsSingle ?? true);
 
     if (isSingle) {
@@ -80,16 +74,26 @@ export class SongsService {
       }
     }
 
+    if (!genreId) {
+      throw new BadRequestException('genreId is required');
+    }
+
     const data: any = {
-      ...rest,
+      title,
+      duration: Number(duration),
+      audioUrl,
       isSingle,
       coverUrl: coverUrl || null,
-      albumId: isSingle ? null : albumId,
-      artists: { connect: finalArtistIds.map((id) => ({ id })) },
-      ...(groupIds && groupIds.length
+      genre: { connect: { id: genreId } },
+      ...(isSingle ? {} : { album: { connect: { id: albumId } } }),
+      ...(finalArtistIds.length > 0
+        ? { artists: { connect: finalArtistIds.map((id) => ({ id })) } }
+        : {}),
+      ...(groupIds && groupIds.length > 0
         ? { groups: { connect: groupIds.map((id) => ({ id })) } }
         : {}),
     };
+
     return this.prisma.song.create({
       data,
     });
@@ -97,15 +101,16 @@ export class SongsService {
 
   update(id: string, updateSongDto: any) {
     const {
+      title,
+      duration,
+      audioUrl,
       artistIds,
       groupIds,
       isSingle: rawIsSingle,
       albumId,
       coverUrl,
-      ...rest
+      genreId,
     } = updateSongDto || {};
-
-    const data: Record<string, any> = { ...rest };
 
     const cleanAlbumId =
       typeof albumId === 'string' && albumId.trim() !== '' ? albumId : null;
@@ -115,22 +120,35 @@ export class SongsService {
         ? rawIsSingle
         : true;
 
-    data.isSingle = isSingle;
-    data.albumId = isSingle ? null : cleanAlbumId;
+    const updateData: any = {};
+
+    if (typeof title !== 'undefined') updateData.title = title;
+    if (typeof duration !== 'undefined') updateData.duration = Number(duration);
+    if (typeof audioUrl !== 'undefined') updateData.audioUrl = audioUrl;
+    updateData.isSingle = isSingle;
 
     if (typeof coverUrl !== 'undefined') {
-      data.coverUrl = coverUrl || null;
+      updateData.coverUrl = coverUrl || null;
     }
 
-    const updateData: any = {
-      ...data,
-      ...(artistIds && Array.isArray(artistIds)
-        ? { artists: { set: artistIds.map((aid: string) => ({ id: aid })) } }
-        : {}),
-      ...(groupIds && Array.isArray(groupIds)
-        ? { groups: { set: groupIds.map((gid: string) => ({ id: gid })) } }
-        : {}),
-    };
+    if (isSingle) {
+      updateData.album = { disconnect: true };
+    } else if (cleanAlbumId) {
+      updateData.album = { connect: { id: cleanAlbumId } };
+    }
+
+    if (genreId) {
+      updateData.genre = { connect: { id: genreId } };
+    }
+
+    if (Array.isArray(artistIds)) {
+      updateData.artists = { set: artistIds.map((aid: string) => ({ id: aid })) };
+    }
+
+    if (Array.isArray(groupIds)) {
+      updateData.groups = { set: groupIds.map((gid: string) => ({ id: gid })) };
+    }
+
     return this.prisma.song.update({
       where: { id },
       data: updateData,

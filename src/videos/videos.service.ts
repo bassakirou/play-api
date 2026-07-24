@@ -252,9 +252,7 @@ export class VideosService {
     };
   }
 
-  private refreshUrl(url: string, _bucket: 'videos' | 'images') {
-    if (!url) return url;
-    const cleanUrl = url.replace('http://localhost:9000', 'https://media.pyramidplay.cm');
-    return cleanUrl;
+  private refreshUrl(url: string | null | undefined, _bucket: 'videos' | 'images') {
+    return this.minio.refreshUrl(url);
   }
 }

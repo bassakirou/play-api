@@ -44,7 +44,7 @@ export class HlsTranscoderService {
       const files = readdirSync(tempDir);
       this.logger.log(`Transcoding complete. Uploading ${files.length} HLS files to MinIO...`);
 
-      const publicBaseUrl = process.env.MINIO_PUBLIC_URL || 'https://media.pyramidplay.cm';
+      const publicBaseUrl = process.env.MINIO_PUBLIC_URL || 'http://localhost:9000';
 
       for (const file of files) {
         const filePath = join(tempDir, file);

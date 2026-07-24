@@ -193,10 +193,8 @@ export class ArtistsService {
     };
   }
 
-  private refreshUrl(url: string) {
-    if (!url) return url;
-    const cleanUrl = url.replace('http://localhost:9000', 'https://media.pyramidplay.cm');
-    return cleanUrl;
+  private refreshUrl(url: string | null | undefined) {
+    return this.minio.refreshUrl(url);
   }
 
   findCreators() {
