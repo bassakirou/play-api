@@ -285,19 +285,36 @@ export class VideosService {
       }
     }
 
-    if (user && user.artistProfile) {
-      user = {
-        ...user,
-        artistProfile: {
-          ...user.artistProfile,
-          imageUrl: user.artistProfile.imageUrl
-            ? await this.refreshUrl(user.artistProfile.imageUrl, 'images')
-            : null,
-          bannerUrl: user.artistProfile.bannerUrl
-            ? await this.refreshUrl(user.artistProfile.bannerUrl, 'images')
-            : null,
-        },
-      };
+    if (user) {
+      if (!user.artistProfile) {
+        let channel = await (this.prisma as any).artist.findFirst({
+          where: { userId: user.id },
+        });
+        if (!channel) {
+          channel = await (this.prisma as any).artist.create({
+            data: {
+              name: user.name || user.email.split('@')[0],
+              userId: user.id,
+            },
+          });
+        }
+        user.artistProfile = channel;
+      }
+
+      if (user.artistProfile) {
+        user = {
+          ...user,
+          artistProfile: {
+            ...user.artistProfile,
+            imageUrl: user.artistProfile.imageUrl
+              ? await this.refreshUrl(user.artistProfile.imageUrl, 'images')
+              : null,
+            bannerUrl: user.artistProfile.bannerUrl
+              ? await this.refreshUrl(user.artistProfile.bannerUrl, 'images')
+              : null,
+          },
+        };
+      }
     }
 
     return {
