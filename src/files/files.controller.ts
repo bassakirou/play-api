@@ -1,5 +1,6 @@
 /* eslint-disable no-empty */
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -239,7 +240,7 @@ export class FilesController {
       try {
         const env = isProduction ? 'Production Fallback' : 'Local';
         console.log(
-          `[FilesController] ${env}: Uploading audio to Minio: ${uniqueName}`,
+          `[FilesController] ${env}: Uploading audio to MinIO: ${uniqueName}`,
         );
         const url = await this.minio.upload({
           bucket: 'audio',
@@ -249,27 +250,12 @@ export class FilesController {
         });
         return { url: typeof url === 'string' ? url : (url as any).url || url };
       } catch (err) {
-        console.error(`[FilesController] Minio audio upload failed: ${err.message}`);
+        console.error(`[FilesController] MinIO audio upload failed: ${err.message}`);
+        throw new BadRequestException(`Échec de l'upload audio vers MinIO: ${err.message}`);
       }
     }
 
-    // 3. Fallback Local (disque)
-    try {
-      if (fileBuffer) {
-        const dest = join(process.cwd(), 'uploads', 'audio');
-        ensureDir(dest);
-        const filename = uniqueName;
-        writeFileSync(join(dest, filename), fileBuffer);
-        return {
-          url: `/uploads/audio/${filename}`,
-          objectName: filename,
-        };
-      }
-    } catch (err) {
-      console.error(`[FilesController] Local audio fallback failed: ${err.message}`);
-    }
-
-    throw new Error('All audio upload storage attempts failed');
+    throw new BadRequestException('MinIO storage service is not enabled or file buffer missing');
   }
 
   @Post('upload-image')
@@ -308,53 +294,29 @@ export class FilesController {
       }
     }
 
-    // 2. En LOCAL (ou fallback production) : Utilisation de Minio
+    // 2. Utilisation de MinIO
     if (this.minio.isEnabled()) {
       try {
         const env = isProduction ? 'Production Fallback' : 'Local';
         console.log(
-          `[FilesController] ${env}: Uploading image to Minio: ${uniqueName}`,
+          `[FilesController] ${env}: Uploading image to MinIO: ${uniqueName}`,
         );
         const url = await this.minio.upload({
           bucket: 'images',
-          objectName: uniqueName, // On enlève le préfixe images/ ici car le bucket s'appelle déjà images
+          objectName: uniqueName,
           buffer: file.buffer,
           contentType: file.mimetype,
         });
-        // On s'assure de renvoyer un objet JSON { url: "..." }
         return { url: typeof url === 'string' ? url : (url as any).url || url };
       } catch (err) {
         console.error(
-          `[FilesController] Minio Image upload failed: ${err.message}`,
+          `[FilesController] MinIO Image upload failed: ${err.message}`,
         );
+        throw new BadRequestException(`Échec de l'upload d'image vers MinIO: ${err.message}`);
       }
     }
 
-    // 3. Fallback disque local
-    try {
-      if (!file.filename && file.buffer) {
-        const dest = join(process.cwd(), 'uploads', 'images');
-        ensureDir(dest);
-        const filename = `${Date.now()}-${randomBytes(8).toString('hex')}${extname(file.originalname)}`;
-        writeFileSync(join(dest, filename), file.buffer);
-        return {
-          url: `/uploads/images/${filename}`,
-          objectName: filename,
-        };
-      }
-      if (file.filename) {
-        return {
-          url: `/uploads/images/${file.filename}`,
-          objectName: file.filename,
-        };
-      }
-      throw new Error('No local file data available');
-    } catch (err) {
-      console.error(`[FilesController] Local fallback failed: ${err.message}`);
-      return {
-        url: 'https://placehold.co/400x400?text=Upload+Failed+Check+Logs',
-      };
-    }
+    throw new BadRequestException('MinIO storage service is not enabled');
   }
 
   @Post('upload-video')
@@ -413,25 +375,12 @@ export class FilesController {
         });
         return { url: typeof url === 'string' ? url : (url as any).url || url };
       } catch (err) {
-        console.error(`[FilesController] Minio video upload failed: ${err.message}`);
+        console.error(`[FilesController] MinIO video upload failed: ${err.message}`);
+        throw new BadRequestException(`Échec de l'upload vidéo vers MinIO: ${err.message}`);
       }
     }
 
-    try {
-      const dest = join(process.cwd(), 'uploads', 'videos');
-      ensureDir(dest);
-      const filename = uniqueName;
-      writeFileSync(join(dest, filename), fileBuffer);
-      return {
-        url: `/uploads/videos/${filename}`,
-        objectName: filename,
-      };
-    } catch (err) {
-      console.error(`[FilesController] Local video fallback failed: ${err.message}`);
-      return {
-        url: 'https://placehold.co/400x400?text=Upload+Failed+Check+Logs',
-      };
-    }
+    throw new BadRequestException('MinIO storage service is not enabled');
   }
 
   @Get('resolved-audio')
