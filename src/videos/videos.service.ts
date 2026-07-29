@@ -3,6 +3,20 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MinioService } from '../storage/minio.service';
 import { CreateVideoDto } from './dto/create-video.dto';
 
+const defaultInclude = {
+  artists: true,
+  genre: true,
+  user: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      artistProfile: true,
+    },
+  },
+  VideoPlaylist: { select: { id: true, name: true } },
+};
+
 @Injectable()
 export class VideosService {
   constructor(
@@ -13,11 +27,7 @@ export class VideosService {
   async findAll() {
     const videos = await (this.prisma as any).video.findMany({
       where: { isPublished: true },
-      include: {
-        artists: true,
-        genre: true,
-        VideoPlaylist: { select: { id: true, name: true } },
-      },
+      include: defaultInclude,
       orderBy: { createdAt: 'desc' },
     });
     return Promise.all(videos.map((v) => this.hydrateUrls(v)));
@@ -25,11 +35,7 @@ export class VideosService {
 
   async findAllAdmin() {
     const videos = await (this.prisma as any).video.findMany({
-      include: {
-        artists: true,
-        genre: true,
-        VideoPlaylist: { select: { id: true, name: true } },
-      },
+      include: defaultInclude,
       orderBy: { createdAt: 'desc' },
     });
     return Promise.all(videos.map((v) => this.hydrateUrls(v)));
@@ -38,11 +44,7 @@ export class VideosService {
   async findOne(id: string) {
     const video = await (this.prisma as any).video.findUnique({
       where: { id },
-      include: {
-        artists: true,
-        genre: true,
-        VideoPlaylist: { select: { id: true, name: true } },
-      },
+      include: defaultInclude,
     });
     if (!video) return null;
     return this.hydrateUrls(video);
@@ -51,17 +53,13 @@ export class VideosService {
   async findByArtist(artistId: string) {
     const videos = await (this.prisma as any).video.findMany({
       where: { isPublished: true, artists: { some: { id: artistId } } },
-      include: {
-        artists: true,
-        genre: true,
-        VideoPlaylist: { select: { id: true, name: true } },
-      },
+      include: defaultInclude,
       orderBy: { createdAt: 'desc' },
     });
     return Promise.all(videos.map((v) => this.hydrateUrls(v)));
   }
 
-  async create(createVideoDto: CreateVideoDto) {
+  async create(createVideoDto: CreateVideoDto, userId?: string) {
     const dto = createVideoDto as unknown as Record<string, any>;
     const { artistIds, artistId, tags, thumbnailUrl, videoPlaylistIds, ...rest } = dto;
 
@@ -79,6 +77,7 @@ export class VideosService {
       ...rest,
       tags: Array.isArray(tags) ? tags : [],
       thumbnailUrl: thumbnailUrl || null,
+      userId: userId || null,
       artists: { connect: finalArtistIds.map((id) => ({ id })) },
       ...(videoPlaylistIds && Array.isArray(videoPlaylistIds)
         ? {
@@ -89,14 +88,12 @@ export class VideosService {
         : {}),
     };
 
-    return (this.prisma as any).video.create({
+    const created = await (this.prisma as any).video.create({
       data,
-      include: {
-        artists: true,
-        genre: true,
-        VideoPlaylist: { select: { id: true, name: true } },
-      },
+      include: defaultInclude,
     });
+
+    return this.hydrateUrls(created);
   }
 
   async createForUser(userId: string, body: any) {
@@ -133,6 +130,7 @@ export class VideosService {
         isPublished: typeof body?.isPublished === 'boolean' ? body.isPublished : true,
         category: typeof body?.category === 'string' ? body.category : null,
         tags,
+        userId,
         ...(genreId ? { genreId } : {}),
         artists: { connect: [{ id: artist.id }] },
         ...(Array.isArray(body?.videoPlaylistIds) && body.videoPlaylistIds.length > 0
@@ -143,11 +141,7 @@ export class VideosService {
             }
           : {}),
       },
-      include: {
-        artists: true,
-        genre: true,
-        VideoPlaylist: { select: { id: true, name: true } },
-      },
+      include: defaultInclude,
     });
 
     return this.hydrateUrls(created);
@@ -183,15 +177,13 @@ export class VideosService {
         : {}),
     };
 
-    return (this.prisma as any).video.update({
+    const updated = await (this.prisma as any).video.update({
       where: { id },
       data: updateData,
-      include: {
-        artists: true,
-        genre: true,
-        VideoPlaylist: { select: { id: true, name: true } },
-      },
+      include: defaultInclude,
     });
+
+    return this.hydrateUrls(updated);
   }
 
   async updateMetrics(
@@ -221,11 +213,7 @@ export class VideosService {
           ? { likes: { set: nextLikes } }
           : {}),
       },
-      include: {
-        artists: true,
-        genre: true,
-        VideoPlaylist: { select: { id: true, name: true } },
-      },
+      include: defaultInclude,
     });
 
     return this.hydrateUrls(update);
@@ -240,8 +228,26 @@ export class VideosService {
 
   private async hydrateUrls(video: any) {
     const rawPlaylists = video?.VideoPlaylist || [];
+    let user = video?.user || null;
+
+    if (user && user.artistProfile) {
+      user = {
+        ...user,
+        artistProfile: {
+          ...user.artistProfile,
+          imageUrl: user.artistProfile.imageUrl
+            ? await this.refreshUrl(user.artistProfile.imageUrl, 'images')
+            : null,
+          bannerUrl: user.artistProfile.bannerUrl
+            ? await this.refreshUrl(user.artistProfile.bannerUrl, 'images')
+            : null,
+        },
+      };
+    }
+
     return {
       ...video,
+      user,
       videoUrl: video.videoUrl
         ? await this.refreshUrl(video.videoUrl, 'videos')
         : null,

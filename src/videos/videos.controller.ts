@@ -49,8 +49,8 @@ export class VideosController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('create:video')
   @Post()
-  create(@Body() dto: CreateVideoDto) {
-    return this.videosService.create(dto);
+  create(@Req() req: any, @Body() dto: CreateVideoDto) {
+    return this.videosService.create(dto, req.user?.userId);
   }
 
   @ApiBearerAuth()

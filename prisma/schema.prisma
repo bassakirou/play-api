@@ -28,6 +28,7 @@ model User {
   VideoPlaylist    VideoPlaylist[]
   favorites        Song[]          @relation("UserFavorites")
   followingArtists Artist[]        @relation("UserFollowsArtist")
+  videos           Video[]
 }
 
 model Role {
@@ -165,8 +166,10 @@ model Video {
   category      String?
   tags          String[]        @default([])
   genreId       String?
+  userId        String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+  user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   genre         Genre?          @relation(fields: [genreId], references: [id])
   artists       Artist[]        @relation("VideoArtists")
   VideoPlaylist VideoPlaylist[] @relation("VideoPlaylistVideos")
