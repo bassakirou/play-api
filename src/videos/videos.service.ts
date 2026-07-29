@@ -73,11 +73,20 @@ export class VideosService {
       throw new BadRequestException('artistIds is required');
     }
 
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      const adminUser = await (this.prisma as any).user.findFirst({
+        where: { role: { name: 'ADMIN' } },
+        select: { id: true },
+      }) || await (this.prisma as any).user.findFirst({ select: { id: true } });
+      effectiveUserId = adminUser?.id;
+    }
+
     const data: any = {
       ...rest,
       tags: Array.isArray(tags) ? tags : [],
       thumbnailUrl: thumbnailUrl || null,
-      userId: userId || null,
+      userId: effectiveUserId || null,
       artists: { connect: finalArtistIds.map((id) => ({ id })) },
       ...(videoPlaylistIds && Array.isArray(videoPlaylistIds)
         ? {
@@ -97,10 +106,23 @@ export class VideosService {
   }
 
   async createForUser(userId: string, body: any) {
-    const artist = await this.prisma.artist.findUnique({
+    let artist = await this.prisma.artist.findUnique({
       where: { userId },
       select: { id: true },
     });
+    if (!artist) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user) {
+        artist = await this.prisma.artist.create({
+          data: {
+            name: user.name || user.email.split('@')[0],
+            userId: user.id,
+          },
+          select: { id: true },
+        });
+      }
+    }
+
     if (!artist) {
       throw new BadRequestException('Create your channel first');
     }
@@ -229,6 +251,39 @@ export class VideosService {
   private async hydrateUrls(video: any) {
     const rawPlaylists = video?.VideoPlaylist || [];
     let user = video?.user || null;
+
+    if (!user) {
+      // Find admin user or first user to associate with videos created without userId
+      const fallbackUser =
+        (await (this.prisma as any).user.findFirst({
+          where: { role: { name: 'ADMIN' } },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            artistProfile: true,
+          },
+        })) ||
+        (await (this.prisma as any).user.findFirst({
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            artistProfile: true,
+          },
+        }));
+
+      if (fallbackUser) {
+        user = fallbackUser;
+        // Backfill userId in PostgreSQL DB asynchronously
+        (this.prisma as any).video
+          .update({
+            where: { id: video.id },
+            data: { userId: fallbackUser.id },
+          })
+          .catch(() => {});
+      }
+    }
 
     if (user && user.artistProfile) {
       user = {
