@@ -42,6 +42,11 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    
+    if (user.isEmailVerified === false && user.role.name === 'USER') {
+      throw new UnauthorizedException('Please verify your email first');
+    }
+
     const payload = { email: user.email, sub: user.id, role: user.role.name };
     return {
       access_token: this.jwtService.sign(payload),
@@ -51,15 +56,78 @@ export class AuthService {
 
   async register(registerDto: CreateUserDto) {
     const user = await this.usersService.create(registerDto);
+    
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + 1);
+
+    await this.usersService.update(user.id, {
+      verificationCode: otp,
+      verificationCodeExpiry: expiry,
+      isEmailVerified: false,
+    });
+
+    await this.mailService.sendVerificationEmail(user.email, otp);
+
+    return {
+      message: 'User created successfully. Please verify your email.',
+      requiresVerification: true,
+      email: user.email,
+    };
+  }
+
+  async verifyEmail(email: string, code: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) throw new UnauthorizedException('User not found');
+    
+    if (user.isEmailVerified) {
+      return { message: 'Email already verified' };
+    }
+
+    if (user.verificationCode !== code || !user.verificationCodeExpiry || new Date() > user.verificationCodeExpiry) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    await this.usersService.update(user.id, {
+      isEmailVerified: true,
+      verificationCode: null,
+      verificationCodeExpiry: null,
+    });
+
     const payload = {
       email: user.email,
       sub: user.id,
-      role: registerDto.role || 'USER',
+      role: user.role.name,
     };
+
     return {
+      message: 'Email verified successfully',
       access_token: this.jwtService.sign(payload),
       user,
     };
+  }
+
+  async resendVerificationCode(email: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) throw new UnauthorizedException('User not found');
+    
+    if (user.isEmailVerified) {
+      return { message: 'Email already verified' };
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + 1);
+
+    await this.usersService.update(user.id, {
+      verificationCode: otp,
+      verificationCodeExpiry: expiry,
+    });
+
+    await this.mailService.sendVerificationEmail(user.email, otp);
+
+    return { message: 'Verification code sent' };
   }
 
   async forgotPassword(email: string) {

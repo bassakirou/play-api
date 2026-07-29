@@ -116,7 +116,7 @@ export class UsersService {
     }
     delete rawData.role;
 
-    const allowedKeys = ['email', 'password', 'name', 'resetToken', 'resetTokenExpiry', 'roleId'];
+    const allowedKeys = ['email', 'password', 'name', 'resetToken', 'resetTokenExpiry', 'roleId', 'isEmailVerified', 'verificationCode', 'verificationCodeExpiry'];
     const sanitizedData: Record<string, any> = {};
     for (const key of allowedKeys) {
       if (rawData[key] !== undefined) {

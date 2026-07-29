@@ -68,6 +68,24 @@ export class MailService {
     });
   }
 
+  async sendVerificationEmail(to: string, code: string) {
+    const from = this.getFromAddress();
+    
+    await this.transporter.sendMail({
+      from,
+      to,
+      subject: 'Code de validation Pyramid Play',
+      html: `
+        <h1>Validation de votre compte</h1>
+        <p>Merci de vous être inscrit sur Pyramid Play !</p>
+        <p>Voici votre code de validation à 6 chiffres :</p>
+        <h2 style="font-size: 24px; padding: 10px; background: #f4f4f4; border-radius: 5px; display: inline-block;">${code}</h2>
+        <p>Ce code expire dans 1 heure.</p>
+        <p>Si vous n'avez pas créé de compte, vous pouvez ignorer cet email.</p>
+      `,
+    });
+  }
+
   async sendPlatformAvailableEmail(to: string, platformUrl: string) {
     const from = this.getFromAddress();
 

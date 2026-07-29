@@ -122,6 +122,21 @@ export class FilesController {
         }
       }
 
+      // 1.5. Local disk check for /uploads/ files
+      if (url.includes('/uploads/')) {
+        const relativePath = url.substring(url.indexOf('/uploads/'));
+        const diskPath = join(process.cwd(), relativePath);
+        if (existsSync(diskPath)) {
+          if (diskPath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+          else if (diskPath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+          else res.setHeader('Content-Type', 'image/jpeg');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          res.status(200);
+          createReadStream(diskPath).pipe(res);
+          return;
+        }
+      }
+
       // 2. HTTP fetch fallback
       let target = url;
       if (!target.startsWith('http://') && !target.startsWith('https://')) {
@@ -613,6 +628,20 @@ export class FilesController {
           } catch (err) {
             console.warn('[resolvedVideo] MinIO getObjectStream failed, trying HTTP fetch:', err.message);
           }
+        }
+      }
+
+      // 1.5. Local disk check for /uploads/ files
+      if (url.includes('/uploads/')) {
+        const relativePath = url.substring(url.indexOf('/uploads/'));
+        const diskPath = join(process.cwd(), relativePath);
+        if (existsSync(diskPath)) {
+          if (diskPath.endsWith('.ts')) res.setHeader('Content-Type', 'video/mp2t');
+          else if (diskPath.endsWith('.mp4')) res.setHeader('Content-Type', 'video/mp4');
+          res.setHeader('Accept-Ranges', 'bytes');
+          res.status(200);
+          createReadStream(diskPath).pipe(res);
+          return;
         }
       }
 

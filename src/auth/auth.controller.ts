@@ -31,6 +31,16 @@ export class AuthController {
     return this.authService.register(registerDto);
   }
 
+  @Post('verify-email')
+  verifyEmail(@Body() body: { email: string; code: string }) {
+    return this.authService.verifyEmail(body.email, body.code);
+  }
+
+  @Post('resend-verification')
+  resendVerification(@Body('email') email: string) {
+    return this.authService.resendVerificationCode(email);
+  }
+
   @Post('forgot-password')
   forgotPassword(@Body('email') email: string) {
     return this.authService.forgotPassword(email);
