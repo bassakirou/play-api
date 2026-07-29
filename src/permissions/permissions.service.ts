@@ -7,7 +7,7 @@ export class PermissionsService implements OnModuleInit {
 
   async onModuleInit() {
     const actions = ['create', 'read', 'update', 'delete', 'manage'];
-    const resources = ['song', 'album', 'artist', 'genre', 'user', 'role'];
+    const resources = ['song', 'video', 'album', 'artist', 'genre', 'user', 'role'];
     for (const action of actions) {
       for (const resource of resources) {
         const exists = await this.prisma.permission.findFirst({
