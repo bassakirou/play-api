@@ -66,7 +66,14 @@ export class UsersService {
   findAll() {
     return this.prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
-      include: { role: true, artistProfile: true },
+      include: {
+        role: {
+          include: {
+            permissions: true,
+          },
+        },
+        artistProfile: true,
+      },
     });
   }
 
@@ -77,14 +84,29 @@ export class UsersService {
   findOne(id: string) {
     return this.prisma.user.findUnique({
       where: { id },
-      include: { role: true, artistProfile: true, favorites: true },
+      include: {
+        role: {
+          include: {
+            permissions: true,
+          },
+        },
+        artistProfile: true,
+        favorites: true,
+      },
     });
   }
 
   findByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email },
-      include: { role: true },
+      include: {
+        role: {
+          include: {
+            permissions: true,
+          },
+        },
+        artistProfile: true,
+      },
     });
   }
 

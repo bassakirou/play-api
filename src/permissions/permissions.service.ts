@@ -18,17 +18,37 @@ export class PermissionsService implements OnModuleInit {
         }
       }
     }
-    const admin = await this.prisma.role.findUnique({
-      where: { name: 'ADMIN' },
+    const admins = await this.prisma.role.findMany({
+      where: { name: { in: ['ADMIN', 'SUPER_ADMIN'] } },
     });
-    if (admin) {
-      const allPerms = await this.prisma.permission.findMany();
+    const allPerms = await this.prisma.permission.findMany();
+    for (const admin of admins) {
       await this.prisma.role.update({
         where: { id: admin.id },
         data: {
           permissions: { set: allPerms.map((p) => ({ id: p.id })) },
         },
       });
+    }
+
+    const editor = await this.prisma.role.findFirst({
+      where: { name: { equals: 'EDITOR', mode: 'insensitive' } },
+      include: { permissions: true },
+    });
+    if (editor) {
+      const editorPerms = await this.prisma.permission.findMany({
+        where: { resource: { in: ['song', 'video', 'album', 'artist', 'genre'] } },
+      });
+      const currentIds = new Set(editor.permissions.map((p) => p.id));
+      const missing = editorPerms.filter((p) => !currentIds.has(p.id));
+      if (missing.length > 0) {
+        await this.prisma.role.update({
+          where: { id: editor.id },
+          data: {
+            permissions: { connect: missing.map((p) => ({ id: p.id })) },
+          },
+        });
+      }
     }
   }
 
