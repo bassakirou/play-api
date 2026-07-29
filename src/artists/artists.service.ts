@@ -119,12 +119,28 @@ export class ArtistsService {
   }
 
   async findMyChannel(userId: string) {
-    const artist = await this.prisma.artist.findUnique({
+    let artist = await this.prisma.artist.findUnique({
       where: { userId },
       include: {
         _count: { select: { followers: true } },
       },
     });
+
+    if (!artist) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user) {
+        artist = await this.prisma.artist.create({
+          data: {
+            name: user.name || user.email.split('@')[0],
+            userId: user.id,
+          },
+          include: {
+            _count: { select: { followers: true } },
+          },
+        });
+      }
+    }
+
     if (!artist) return null;
 
     return {
