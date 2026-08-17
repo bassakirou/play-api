@@ -1,5 +1,18 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+import * as fs from 'fs';
+
+// Charger .env.local prioritairement s'il existe, sinon .env
+const envLocalPath = path.resolve(process.cwd(), '.env.local');
+const envPath = path.resolve(process.cwd(), '.env');
+if (fs.existsSync(envLocalPath)) {
+  dotenv.config({ path: envLocalPath, override: true });
+} else if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath, override: true });
+}
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
