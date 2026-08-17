@@ -13,6 +13,8 @@
     "vercel-build": "prisma generate && prisma db push --accept-data-loss",
     "postinstall": "prisma generate && prisma db push --accept-data-loss",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "cleanup:artists": "ts-node -r tsconfig-paths/register prisma/cleanup-artists.ts",
+    "ensure:channels": "ts-node -r tsconfig-paths/register prisma/ensure-user-channels.ts",
     "start": "node -r ts-node/register/transpile-only -r tsconfig-paths/register src/main.ts",
     "start:dev": "node -r ts-node/register/transpile-only -r tsconfig-paths/register src/main.ts",
     "start:debug": "node --inspect-brk -r ts-node/register/transpile-only -r tsconfig-paths/register src/main.ts",

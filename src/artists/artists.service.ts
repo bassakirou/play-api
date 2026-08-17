@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateArtistDto } from './dto/create-artist.dto';
 import { MinioService } from '../storage/minio.service';
@@ -48,14 +48,31 @@ export class ArtistsService {
     throw new ForbiddenException('Not authorized to create artist');
   }
 
-  async findAll() {
+  async findAll(type?: string) {
+    const where: any = {};
+    if (type === 'catalog') {
+      where.userId = null;
+    } else if (type === 'channel') {
+      where.userId = { not: null };
+    } else if (type === 'all') {
+      // no filter
+    } else {
+      // Par défaut, retourner les artistes du catalogue musical
+      where.userId = null;
+    }
+
     const artists = await this.prisma.artist.findMany({
+      where: type === 'all' ? undefined : where,
       orderBy: { createdAt: 'desc' },
       include: {
-        albums: true,
+        albums: {
+          include: {
+            songs: true,
+          },
+        },
         songs: true,
         _count: {
-          select: { followers: true },
+          select: { followers: true, songs: true },
         },
       },
     });
@@ -67,7 +84,125 @@ export class ArtistsService {
     );
   }
 
+  async findAllChannels() {
+    const channels = await this.prisma.artist.findMany({
+      where: { userId: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: { select: { name: true } },
+          },
+        },
+        _count: {
+          select: { followers: true },
+        },
+      },
+    });
+
+    const videoCounts = await this.prisma.video.groupBy({
+      by: ['userId'],
+      _count: { id: true },
+    });
+    const videoCountMap = new Map<string, number>();
+    videoCounts.forEach((vc: any) => {
+      if (vc.userId) {
+        videoCountMap.set(vc.userId, vc._count.id);
+      }
+    });
+
+    return Promise.all(
+      channels.map(async (c) => ({
+        ...c,
+        imageUrl: c.imageUrl ? await this.refreshUrl(c.imageUrl) : null,
+        bannerUrl: c.bannerUrl ? await this.refreshUrl(c.bannerUrl) : null,
+        videoCount: c.userId ? videoCountMap.get(c.userId) || 0 : 0,
+      })),
+    );
+  }
+
+  async findPopular() {
+    // Only return artists with at least 1 song
+    const artists = await this.prisma.artist.findMany({
+      where: {
+        songs: {
+          some: {},
+        },
+      },
+      include: {
+        albums: {
+          include: { songs: true },
+        },
+        songs: {
+          include: {
+            _count: {
+              select: { favoritedBy: true },
+            },
+          },
+        },
+        _count: {
+          select: { followers: true },
+        },
+      },
+    });
+
+    const scoredArtists = artists.map((a: any) => {
+      const totalPlays = (a.songs || []).reduce((sum: number, s: any) => sum + (s.plays || 0), 0);
+      const totalSongLikes = (a.songs || []).reduce(
+        (sum: number, s: any) => sum + (s._count?.favoritedBy || 0),
+        0,
+      );
+      const followersCount = a._count?.followers || 0;
+      const profileViews = a.views || 0;
+
+      // Popularity score formula: (Plays * 3) + (Followers * 2) + (Likes * 2) + (Views * 1)
+      const popularityScore =
+        totalPlays * 3 + followersCount * 2 + totalSongLikes * 2 + profileViews * 1;
+
+      return {
+        ...a,
+        popularityScore,
+        followersCount,
+      };
+    });
+
+    // Sort descending by popularityScore, tie-break by total songs desc, then createdAt desc
+    scoredArtists.sort((a: any, b: any) => {
+      if (b.popularityScore !== a.popularityScore) {
+        return b.popularityScore - a.popularityScore;
+      }
+      if (b.songs.length !== a.songs.length) {
+        return b.songs.length - a.songs.length;
+      }
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    return Promise.all(
+      scoredArtists.map(async (a: any) => ({
+        ...a,
+        imageUrl: a.imageUrl ? await this.refreshUrl(a.imageUrl) : null,
+      })),
+    );
+  }
+
+  async incrementViews(id: string) {
+    try {
+      await this.prisma.artist.update({
+        where: { id },
+        data: { views: { increment: 1 } },
+      });
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  }
+
   async findOne(id: string) {
+    void this.incrementViews(id);
+
     const artist = await this.prisma.artist.findUnique({
       where: { id },
       include: {
@@ -129,9 +264,10 @@ export class ArtistsService {
     if (!artist) {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
       if (user) {
+        const channelName = (user.name || user.email.split('@')[0] || 'Chaîne').trim();
         artist = await this.prisma.artist.create({
           data: {
-            name: user.name || user.email.split('@')[0],
+            name: channelName,
             userId: user.id,
           },
           include: {
@@ -147,6 +283,70 @@ export class ArtistsService {
       ...artist,
       imageUrl: artist.imageUrl ? await this.refreshUrl(artist.imageUrl) : null,
       bannerUrl: artist.bannerUrl ? await this.refreshUrl(artist.bannerUrl) : null,
+    };
+  }
+
+  async createChannelForUser(dto: {
+    userId: string;
+    name?: string;
+    bio?: string;
+    imageUrl?: string;
+    bannerUrl?: string;
+    certified?: boolean;
+  }) {
+    const user = await this.prisma.user.findUnique({ where: { id: dto.userId } });
+    if (!user) {
+      throw new NotFoundException('Utilisateur introuvable');
+    }
+    const existing = await this.prisma.artist.findUnique({ where: { userId: dto.userId } });
+    const channelName = (dto.name || user.name || user.email.split('@')[0] || 'Chaîne').trim();
+
+    if (existing) {
+      const updated = await this.prisma.artist.update({
+        where: { id: existing.id },
+        data: {
+          name: channelName,
+          ...(typeof dto.bio !== 'undefined' ? { bio: dto.bio || null } : {}),
+          ...(typeof dto.imageUrl !== 'undefined' ? { imageUrl: dto.imageUrl || null } : {}),
+          ...(typeof dto.bannerUrl !== 'undefined' ? { bannerUrl: dto.bannerUrl || null } : {}),
+          ...(typeof dto.certified !== 'undefined' ? { certified: !!dto.certified } : {}),
+        },
+        include: {
+          user: {
+            select: { id: true, name: true, email: true, role: { select: { name: true } } },
+          },
+          _count: { select: { followers: true } },
+        },
+      });
+      return {
+        ...updated,
+        imageUrl: updated.imageUrl ? await this.refreshUrl(updated.imageUrl) : null,
+        bannerUrl: updated.bannerUrl ? await this.refreshUrl(updated.bannerUrl) : null,
+      };
+    }
+
+    const created = await this.prisma.artist.create({
+      data: {
+        name: channelName,
+        bio: dto.bio || null,
+        imageUrl: dto.imageUrl || null,
+        bannerUrl: dto.bannerUrl || null,
+        certified: !!dto.certified,
+        userId: dto.userId,
+      },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, role: { select: { name: true } } },
+        },
+        _count: { select: { followers: true } },
+      },
+    });
+
+    return {
+      ...created,
+      imageUrl: created.imageUrl ? await this.refreshUrl(created.imageUrl) : null,
+      bannerUrl: created.bannerUrl ? await this.refreshUrl(created.bannerUrl) : null,
+      videoCount: 0,
     };
   }
 
@@ -278,6 +478,44 @@ export class ArtistsService {
       where: { id },
       data,
     });
+  }
+
+  async cleanupStaleUserArtists() {
+    // Find all artists linked to a user whose role is not CREATOR
+    // and who have 0 songs, 0 albums, 0 videos, 0 groups
+    const staleArtists = await this.prisma.artist.findMany({
+      where: {
+        userId: { not: null },
+        user: {
+          role: {
+            name: { not: 'CREATOR' },
+          },
+        },
+        songs: { none: {} },
+        albums: { none: {} },
+        videos: { none: {} },
+        groups: { none: {} },
+      },
+      select: {
+        id: true,
+        name: true,
+        userId: true,
+      },
+    });
+
+    if (staleArtists.length === 0) {
+      return { count: 0, deleted: [] };
+    }
+
+    const idsToDelete = staleArtists.map((a) => a.id);
+    await this.prisma.artist.deleteMany({
+      where: { id: { in: idsToDelete } },
+    });
+
+    return {
+      count: idsToDelete.length,
+      deleted: staleArtists,
+    };
   }
 
   remove(id: string) {

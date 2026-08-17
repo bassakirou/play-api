@@ -34,18 +34,18 @@ export class UsersService {
           roleId: role.id,
         },
       });
-      if (roleName === 'CREATOR') {
-        const existingArtist = await this.prisma.artist.findUnique({
-          where: { userId: created.id },
+      // Création automatique de la chaîne par défaut pour tout utilisateur avec un compte
+      const channelName = (created.name || created.email.split('@')[0] || 'Chaîne').trim();
+      const existingArtist = await this.prisma.artist.findUnique({
+        where: { userId: created.id },
+      });
+      if (!existingArtist) {
+        await this.prisma.artist.create({
+          data: {
+            name: channelName,
+            userId: created.id,
+          },
         });
-        if (!existingArtist) {
-          await this.prisma.artist.create({
-            data: {
-              name: created.name,
-              userId: created.id,
-            },
-          });
-        }
       }
       return created;
     } catch (err: any) {

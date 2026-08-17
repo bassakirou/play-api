@@ -38,6 +38,18 @@ export class SongsService {
     };
   }
 
+  async incrementPlays(id: string) {
+    try {
+      await this.prisma.song.update({
+        where: { id },
+        data: { plays: { increment: 1 } },
+      });
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  }
+
   private refreshUrl(url: string | null | undefined) {
     return this.minio.refreshUrl(url);
   }

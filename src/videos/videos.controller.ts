@@ -68,7 +68,15 @@ export class VideosController {
     return this.videosService.update(id, dto);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @CheckPermissions('update:video')
   @Patch(':id')
+  patchUpdate(@Param('id') id: string, @Body() dto: any) {
+    return this.videosService.update(id, dto);
+  }
+
+  @Patch(':id/metrics')
   updateMetrics(@Param('id') id: string, @Body() body: any) {
     const incrementViews = !!body?.incrementViews;
     const likeDelta =

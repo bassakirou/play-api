@@ -61,7 +61,16 @@ export class VideosService {
 
   async create(createVideoDto: CreateVideoDto, userId?: string) {
     const dto = createVideoDto as unknown as Record<string, any>;
-    const { artistIds, artistId, tags, thumbnailUrl, videoPlaylistIds, ...rest } = dto;
+    const {
+      artistIds,
+      artistId,
+      channelId,
+      userId: explicitUserId,
+      tags,
+      thumbnailUrl,
+      videoPlaylistIds,
+      ...rest
+    } = dto;
 
     const finalArtistIds: string[] = Array.isArray(artistIds)
       ? artistIds
@@ -69,11 +78,18 @@ export class VideosService {
         ? [artistId]
         : [];
 
-    if (finalArtistIds.length === 0) {
-      throw new BadRequestException('artistIds is required');
+    let effectiveUserId = explicitUserId || userId;
+
+    if (channelId) {
+      const channel = await this.prisma.artist.findUnique({
+        where: { id: channelId },
+        select: { userId: true },
+      });
+      if (channel?.userId) {
+        effectiveUserId = channel.userId;
+      }
     }
 
-    let effectiveUserId = userId;
     if (!effectiveUserId) {
       const adminUser = await (this.prisma as any).user.findFirst({
         where: { role: { name: 'ADMIN' } },
@@ -87,8 +103,10 @@ export class VideosService {
       tags: Array.isArray(tags) ? tags : [],
       thumbnailUrl: thumbnailUrl || null,
       userId: effectiveUserId || null,
-      artists: { connect: finalArtistIds.map((id) => ({ id })) },
-      ...(videoPlaylistIds && Array.isArray(videoPlaylistIds)
+      ...(finalArtistIds.length > 0
+        ? { artists: { connect: finalArtistIds.map((id) => ({ id })) } }
+        : {}),
+      ...(videoPlaylistIds && Array.isArray(videoPlaylistIds) && videoPlaylistIds.length > 0
         ? {
             VideoPlaylist: {
               connect: videoPlaylistIds.map((pid: string) => ({ id: pid })),
@@ -110,33 +128,35 @@ export class VideosService {
       where: { userId },
       select: { id: true },
     });
-    if (!artist) {
-      const user = await this.prisma.user.findUnique({ where: { id: userId } });
-      if (user) {
-        artist = await this.prisma.artist.create({
-          data: {
-            name: user.name || user.email.split('@')[0],
-            userId: user.id,
-          },
-          select: { id: true },
-        });
-      }
-    }
 
     if (!artist) {
-      throw new BadRequestException('Create your channel first');
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      const defaultName = (user?.name || user?.email.split('@')[0] || 'Chaîne').trim();
+      artist = await this.prisma.artist.create({
+        data: {
+          name: defaultName,
+          userId,
+        },
+        select: { id: true },
+      });
     }
 
     const title = typeof body?.title === 'string' ? body.title.trim() : '';
     const videoUrl = typeof body?.videoUrl === 'string' ? body.videoUrl.trim() : '';
     const thumbnailUrl =
-      typeof body?.thumbnailUrl === 'string' ? body.thumbnailUrl.trim() : '';
+      typeof body?.thumbnailUrl === 'string' && body.thumbnailUrl.trim().length > 0
+        ? body.thumbnailUrl.trim()
+        : null;
     const duration = Number(body?.duration);
 
-    if (!title) throw new BadRequestException('title is required');
-    if (!videoUrl) throw new BadRequestException('videoUrl is required');
+    if (!title) {
+      throw new BadRequestException('title is required');
+    }
+    if (!videoUrl) {
+      throw new BadRequestException('videoUrl is required');
+    }
     if (!Number.isFinite(duration) || duration <= 0) {
-      throw new BadRequestException('duration is required');
+      throw new BadRequestException('duration must be > 0');
     }
 
     const tags = Array.isArray(body?.tags) ? body.tags.filter(Boolean) : [];
@@ -170,10 +190,30 @@ export class VideosService {
   }
 
   async update(id: string, updateVideoDto: any) {
-    const { artistIds, tags, thumbnailUrl, videoUrl, videoPlaylistIds, ...rest } =
-      updateVideoDto || {};
+    const {
+      artistIds,
+      channelId,
+      userId,
+      tags,
+      thumbnailUrl,
+      videoUrl,
+      videoPlaylistIds,
+      ...rest
+    } = updateVideoDto || {};
 
     const data: Record<string, any> = { ...rest };
+
+    if (channelId) {
+      const channel = await this.prisma.artist.findUnique({
+        where: { id: channelId },
+        select: { userId: true },
+      });
+      if (channel?.userId) {
+        data.userId = channel.userId;
+      }
+    } else if (userId) {
+      data.userId = userId;
+    }
 
     if (typeof thumbnailUrl !== 'undefined') {
       data.thumbnailUrl = thumbnailUrl || null;

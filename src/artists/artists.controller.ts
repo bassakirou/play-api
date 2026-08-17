@@ -5,6 +5,7 @@ import {
   Body,
   Patch,
   Param,
+  Query,
   Delete,
   UseGuards,
   Request,
@@ -50,9 +51,35 @@ export class ArtistsController {
     return this.artistsService.create(createArtistDto, req.user);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @CheckPermissions('create:artist')
+  @Post('channels')
+  createChannel(@Body() dto: any) {
+    return this.artistsService.createChannelForUser(dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @CheckPermissions('delete:artist')
+  @Post('cleanup-stale')
+  cleanupStale() {
+    return this.artistsService.cleanupStaleUserArtists();
+  }
+
+  @Get('channels')
+  findAllChannels() {
+    return this.artistsService.findAllChannels();
+  }
+
   @Get()
-  findAll() {
-    return this.artistsService.findAll();
+  findAll(@Query('type') type?: string) {
+    return this.artistsService.findAll(type);
+  }
+
+  @Get('popular')
+  findPopular() {
+    return this.artistsService.findPopular();
   }
 
   @Get('creators')
@@ -63,6 +90,11 @@ export class ArtistsController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.artistsService.findOne(id);
+  }
+
+  @Post(':id/view')
+  incrementViews(@Param('id') id: string) {
+    return this.artistsService.incrementViews(id);
   }
 
   @ApiBearerAuth()

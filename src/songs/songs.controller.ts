@@ -39,6 +39,11 @@ export class SongsController {
     return this.songsService.findOne(id);
   }
 
+  @Post(':id/play')
+  incrementPlays(@Param('id') id: string) {
+    return this.songsService.incrementPlays(id);
+  }
+
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('update:song')

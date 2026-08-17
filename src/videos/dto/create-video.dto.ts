@@ -55,11 +55,23 @@ export class CreateVideoDto {
   @IsUUID()
   genreId: string;
 
-  @ApiProperty({ type: [String] })
+  @ApiProperty({ required: false, type: [String] })
   @IsArray()
-  @ArrayMinSize(1)
+  @IsOptional()
   @IsUUID('all', { each: true })
-  artistIds: string[];
+  artistIds?: string[];
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  @IsUUID()
+  channelId?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
 
   @ApiProperty({ required: false, type: [String] })
   @IsArray()
