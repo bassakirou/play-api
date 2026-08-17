@@ -1,32 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import * as dotenv from 'dotenv';
-import * as path from 'path';
-import * as fs from 'fs';
-
-// Charger .env.local (développement local) prioritairement, ou .env
-const candidateEnvFiles = [
-  path.resolve(process.cwd(), '.env.local'),
-  path.resolve(process.cwd(), 'apps/play-api/.env.local'),
-  path.resolve(__dirname, '../../.env.local'),
-  path.resolve(__dirname, '../.env.local'),
-  path.resolve(process.cwd(), '.env'),
-  path.resolve(process.cwd(), 'apps/play-api/.env'),
-  path.resolve(__dirname, '../../.env'),
-  path.resolve(__dirname, '../.env'),
-];
-
-for (const envFile of candidateEnvFiles) {
-  if (fs.existsSync(envFile)) {
-    if (envFile.endsWith('.env.local')) {
-      dotenv.config({ path: envFile, override: true });
-      break;
-    } else {
-      dotenv.config({ path: envFile });
-    }
-  }
-}
-
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
