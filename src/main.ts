@@ -4,13 +4,27 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 
-// Charger .env.local prioritairement s'il existe, sinon .env
-const envLocalPath = path.resolve(process.cwd(), '.env.local');
-const envPath = path.resolve(process.cwd(), '.env');
-if (fs.existsSync(envLocalPath)) {
-  dotenv.config({ path: envLocalPath, override: true });
-} else if (fs.existsSync(envPath)) {
-  dotenv.config({ path: envPath, override: true });
+// Charger .env.local (développement local) prioritairement, ou .env
+const candidateEnvFiles = [
+  path.resolve(process.cwd(), '.env.local'),
+  path.resolve(process.cwd(), 'apps/play-api/.env.local'),
+  path.resolve(__dirname, '../../.env.local'),
+  path.resolve(__dirname, '../.env.local'),
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), 'apps/play-api/.env'),
+  path.resolve(__dirname, '../../.env'),
+  path.resolve(__dirname, '../.env'),
+];
+
+for (const envFile of candidateEnvFiles) {
+  if (fs.existsSync(envFile)) {
+    if (envFile.endsWith('.env.local')) {
+      dotenv.config({ path: envFile, override: true });
+      break;
+    } else {
+      dotenv.config({ path: envFile });
+    }
+  }
 }
 
 import { NestFactory } from '@nestjs/core';
