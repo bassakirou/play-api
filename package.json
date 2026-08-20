@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "vercel-build": "prisma generate && prisma db push --accept-data-loss",
-    "postinstall": "prisma generate && prisma db push --accept-data-loss",
+    "postinstall": "prisma generate",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "cleanup:artists": "ts-node -r tsconfig-paths/register prisma/cleanup-artists.ts",
     "ensure:channels": "ts-node -r tsconfig-paths/register prisma/ensure-user-channels.ts",
