@@ -13,6 +13,7 @@ model User {
   password         String
   name             String
   roleId           String
+  systemRoles      String[]        @default([])
   resetToken       String?
   resetTokenExpiry DateTime?
   isEmailVerified  Boolean         @default(false)
@@ -29,6 +30,7 @@ model User {
   favorites        Song[]          @relation("UserFavorites")
   followingArtists Artist[]        @relation("UserFollowsArtist")
   videos           Video[]
+  audiobooks       Audiobook[]     @relation("UserAudiobooks")
 }
 
 model Role {
@@ -187,3 +189,37 @@ model VideoPlaylist {
   User        User     @relation(fields: [userId], references: [id])
   Video       Video[]  @relation("VideoPlaylistVideos")
 }
+
+model Audiobook {
+  id           String             @id @default(uuid())
+  title        String
+  author       String
+  authorId     String?
+  narrator     String?
+  description  String?
+  coverUrl     String?
+  duration     Int                @default(0) // Durée totale en secondes (somme des chapitres)
+  category     String             @default("Général")
+  rating       Float              @default(5.0)
+  totalReviews Int                @default(0)
+  isTrending   Boolean            @default(false)
+  isNew        Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  authorUser   User?              @relation("UserAudiobooks", fields: [authorId], references: [id], onDelete: SetNull)
+  chapters     AudiobookChapter[]
+}
+
+model AudiobookChapter {
+  id          String    @id @default(uuid())
+  audiobookId String
+  title       String
+  duration    Int       @default(0) // Durée en secondes
+  startAt     Int       @default(0) // Point de départ en secondes
+  audioUrl    String?   // URL MinIO du fichier audio
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  audiobook   Audiobook @relation(fields: [audiobookId], references: [id], onDelete: Cascade)
+}
+

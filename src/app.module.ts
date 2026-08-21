@@ -22,6 +22,7 @@ import { VideosModule } from './videos/videos.module';
 import { VideoPlaylistsModule } from './video-playlists/video-playlists.module';
 import { MigrationModule } from './migration/migration.module';
 import { StatsModule } from './stats/stats.module';
+import { AudiobooksModule } from './audiobooks/audiobooks.module';
 
 import { ConfigModule } from '@nestjs/config';
 
@@ -50,6 +51,7 @@ import { ConfigModule } from '@nestjs/config';
     VideoPlaylistsModule,
     MigrationModule,
     StatsModule,
+    AudiobooksModule,
   ],
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],

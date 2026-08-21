@@ -138,7 +138,18 @@ export class UsersService {
     }
     delete rawData.role;
 
-    const allowedKeys = ['email', 'password', 'name', 'resetToken', 'resetTokenExpiry', 'roleId', 'isEmailVerified', 'verificationCode', 'verificationCodeExpiry'];
+    const allowedKeys = [
+      'email',
+      'password',
+      'name',
+      'systemRoles',
+      'resetToken',
+      'resetTokenExpiry',
+      'roleId',
+      'isEmailVerified',
+      'verificationCode',
+      'verificationCodeExpiry',
+    ];
     const sanitizedData: Record<string, any> = {};
     for (const key of allowedKeys) {
       if (rawData[key] !== undefined) {
@@ -146,10 +157,77 @@ export class UsersService {
       }
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: sanitizedData,
-      include: { role: true },
+      include: { role: true, artistProfile: true },
+    });
+
+    // Auto-synchronisation dans le catalogue des artistes si le rôle ARTIST est activé
+    if (
+      Array.isArray(sanitizedData.systemRoles) &&
+      sanitizedData.systemRoles.includes('ARTIST')
+    ) {
+      const existingArtist = await this.prisma.artist.findUnique({
+        where: { userId: id },
+      });
+      if (!existingArtist) {
+        await this.prisma.artist.create({
+          data: {
+            name: (updated.name || updated.email.split('@')[0] || 'Artiste').trim(),
+            userId: updated.id,
+          },
+        });
+      }
+    }
+
+    return updated;
+  }
+
+  async updateSystemRoles(id: string, roles: string[], isSuperAdmin = false) {
+    let validRoles = Array.isArray(roles) ? roles.map((r) => r.toUpperCase()) : [];
+    if (!isSuperAdmin) {
+      // Un utilisateur normal ne peut pas s'auto-attribuer SUPER_ADMIN
+      const user = await this.prisma.user.findUnique({ where: { id } });
+      const hadSuperAdmin = user?.systemRoles?.includes('SUPER_ADMIN');
+      validRoles = validRoles.filter((r) => r !== 'SUPER_ADMIN');
+      if (hadSuperAdmin) {
+        validRoles.push('SUPER_ADMIN');
+      }
+    }
+
+    return this.update(id, { systemRoles: validRoles } as any);
+  }
+
+  findAuthors() {
+    return this.prisma.user.findMany({
+      where: {
+        systemRoles: {
+          has: 'AUTHOR',
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  findCreators() {
+    return this.prisma.user.findMany({
+      where: {
+        systemRoles: {
+          has: 'CREATOR',
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: { name: 'asc' },
     });
   }
 

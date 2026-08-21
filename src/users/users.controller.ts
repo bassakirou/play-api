@@ -30,6 +30,27 @@ export class UsersController {
   }
 
   @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/system-roles')
+  @ApiOperation({ summary: 'Update current user system roles' })
+  updateMySystemRoles(@Request() req, @Body('systemRoles') systemRoles: string[]) {
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN' || req.user.role === 'ADMIN';
+    return this.usersService.updateSystemRoles(req.user.userId, systemRoles, isSuperAdmin);
+  }
+
+  @Get('authors')
+  @ApiOperation({ summary: 'Get list of users with AUTHOR system role' })
+  findAuthors() {
+    return this.usersService.findAuthors();
+  }
+
+  @Get('creators')
+  @ApiOperation({ summary: 'Get list of users with CREATOR system role' })
+  findCreators() {
+    return this.usersService.findCreators();
+  }
+
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('create:user')
   @Post()
