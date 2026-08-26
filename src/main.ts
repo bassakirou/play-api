@@ -5,10 +5,20 @@ import { existsSync } from 'fs';
 import { resolve } from 'path';
 
 // En local, on charge prioritairement .env.local
-const envLocalPath = resolve(process.cwd(), '.env.local');
-if (existsSync(envLocalPath)) {
-  dotenv.config({ path: envLocalPath, override: true });
-} else {
+const candidateLocalPaths = [
+  resolve(__dirname, '..', '.env.local'),
+  resolve(process.cwd(), 'apps', 'play-api', '.env.local'),
+  resolve(process.cwd(), '.env.local'),
+];
+let loadedLocal = false;
+for (const p of candidateLocalPaths) {
+  if (existsSync(p)) {
+    dotenv.config({ path: p, override: true });
+    loadedLocal = true;
+    break;
+  }
+}
+if (!loadedLocal) {
   dotenv.config();
 }
 
