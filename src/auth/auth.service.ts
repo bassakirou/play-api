@@ -104,7 +104,10 @@ export class AuthService {
     return {
       message: 'Email verified successfully',
       access_token: this.jwtService.sign(payload),
-      user,
+      user: {
+        ...user,
+        isEmailVerified: true,
+      },
     };
   }
 
@@ -130,7 +133,7 @@ export class AuthService {
     return { message: 'Verification code sent' };
   }
 
-  async forgotPassword(email: string) {
+  async forgotPassword(email: string, sourceOrAppUrl?: string) {
     const user = await this.usersService.findByEmail(email);
     if (!user) {
       // Don't reveal user existence
@@ -146,7 +149,24 @@ export class AuthService {
       resetTokenExpiry: expiry,
     });
 
-    await this.mailService.sendResetPasswordEmail(email, token);
+    let customUrl: string | undefined;
+    if (sourceOrAppUrl) {
+      if (
+        sourceOrAppUrl === 'studio' ||
+        sourceOrAppUrl === 'play-studio' ||
+        sourceOrAppUrl === 'creators' ||
+        sourceOrAppUrl === 'play-creators'
+      ) {
+        customUrl =
+          process.env.APP_STUDIO_URL ||
+          process.env.APP_CREATORS_URL ||
+          'http://localhost:5175';
+      } else if (sourceOrAppUrl.startsWith('http://') || sourceOrAppUrl.startsWith('https://')) {
+        customUrl = sourceOrAppUrl;
+      }
+    }
+
+    await this.mailService.sendResetPasswordEmail(email, token, customUrl);
     return { message: 'Reset link sent.' };
   }
 

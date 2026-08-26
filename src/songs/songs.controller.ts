@@ -8,6 +8,7 @@ import {
   Param,
   Delete,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { SongsService } from './songs.service';
 import { CreateSongDto } from './dto/create-song.dto';
@@ -25,8 +26,8 @@ export class SongsController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('create:song')
   @Post()
-  create(@Body() createSongDto: CreateSongDto) {
-    return this.songsService.create(createSongDto);
+  create(@Request() req: any, @Body() createSongDto: CreateSongDto) {
+    return this.songsService.create(createSongDto, req?.user?.userId);
   }
 
   @Get()

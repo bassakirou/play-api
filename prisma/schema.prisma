@@ -31,6 +31,7 @@ model User {
   followingArtists Artist[]        @relation("UserFollowsArtist")
   videos           Video[]
   audiobooks       Audiobook[]     @relation("UserAudiobooks")
+  mediaAssets      MediaAsset[]
 }
 
 model Role {
@@ -218,8 +219,29 @@ model AudiobookChapter {
   startAt     Int       @default(0) // Point de départ en secondes
   audioUrl    String?   // URL MinIO du fichier audio
   order       Int       @default(0)
+  text        String?   @db.Text
+  audioSource String?   @default("HUMAN") // "HUMAN" | "TTS"
+  status      String?   @default("READY") // "READY" | "PENDING" | "PROCESSING" | "FAILED"
+  timestamps  Json?     // Données d'alignement texte-audio / timestamps
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   audiobook   Audiobook @relation(fields: [audiobookId], references: [id], onDelete: Cascade)
+}
+
+model MediaAsset {
+  id           String   @id @default(uuid())
+  title        String
+  filename     String
+  fileUrl      String
+  thumbnailUrl String?
+  type         String   // "audio" | "video" | "image"
+  mimeType     String?
+  size         Int?     // bytes
+  duration     Int?     // seconds for audio/video
+  format       String?  // e.g. "MP3", "WAV", "MP4", "JPG", "PNG", "WEBP"
+  userId       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 

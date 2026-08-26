@@ -1,5 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import * as dotenv from 'dotenv';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
+
+// En local, on charge prioritairement .env.local
+const envLocalPath = resolve(process.cwd(), '.env.local');
+if (existsSync(envLocalPath)) {
+  dotenv.config({ path: envLocalPath, override: true });
+} else {
+  dotenv.config();
+}
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -49,8 +61,8 @@ async function bootstrap() {
     prefix: '/uploads',
   });
 
-  const preferredPort = process.env.PORT ? Number(process.env.PORT) : 3000;
-  const fallbackPorts = [preferredPort, 3002, 3001, 3003].filter(
+  const preferredPort = process.env.PORT ? Number(process.env.PORT) : 3022;
+  const fallbackPorts = [preferredPort, 3023, 3024, 3025].filter(
     (p, i, arr) => arr.indexOf(p) === i,
   );
 

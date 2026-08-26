@@ -46,4 +46,8 @@ export class CreateAudiobookDto {
   @IsNumber()
   @IsOptional()
   rating?: number;
+
+  @ApiPropertyOptional({ description: 'Liste des chapitres initiaux' })
+  @IsOptional()
+  chapters?: any[];
 }

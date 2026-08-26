@@ -4,6 +4,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -26,26 +27,35 @@ export class UsersService {
     }
 
     try {
+      const systemRoles = Array.isArray(createUserDto.systemRoles) ? [...createUserDto.systemRoles] : [];
+      if (['ARTIST', 'AUTHOR', 'CREATOR', 'USER', 'ADMIN', 'SUPER_ADMIN'].includes(roleName) && !systemRoles.includes(roleName)) {
+        systemRoles.push(roleName);
+      }
+
       const created = await this.prisma.user.create({
         data: {
           email: createUserDto.email,
           password: hashedPassword,
           name: createUserDto.name,
           roleId: role.id,
+          systemRoles: systemRoles,
         },
       });
-      // Création automatique de la chaîne par défaut pour tout utilisateur avec un compte
-      const channelName = (created.name || created.email.split('@')[0] || 'Chaîne').trim();
-      const existingArtist = await this.prisma.artist.findUnique({
-        where: { userId: created.id },
-      });
-      if (!existingArtist) {
-        await this.prisma.artist.create({
-          data: {
-            name: channelName,
-            userId: created.id,
-          },
+
+      // Création du profil Artiste UNIQUEMENT si l'utilisateur possède le rôle système ARTIST
+      if (systemRoles.includes('ARTIST') || roleName === 'ARTIST') {
+        const artistName = (created.name || created.email.split('@')[0] || 'Artiste').trim();
+        const existingArtist = await this.prisma.artist.findUnique({
+          where: { userId: created.id },
         });
+        if (!existingArtist) {
+          await this.prisma.artist.create({
+            data: {
+              name: artistName,
+              userId: created.id,
+            },
+          });
+        }
       }
       return created;
     } catch (err: any) {
@@ -163,25 +173,44 @@ export class UsersService {
       include: { role: true, artistProfile: true },
     });
 
-    // Auto-synchronisation dans le catalogue des artistes si le rôle ARTIST est activé
+    // Auto-synchronisation des champs du profil artiste (avatar, bannière, bio, pays, socials)
+    const hasArtistFields =
+      dto.bio !== undefined ||
+      dto.imageUrl !== undefined ||
+      dto.bannerUrl !== undefined ||
+      dto.country !== undefined ||
+      dto.gallery !== undefined ||
+      dto.name !== undefined;
+
     if (
-      Array.isArray(sanitizedData.systemRoles) &&
-      sanitizedData.systemRoles.includes('ARTIST')
+      hasArtistFields ||
+      (Array.isArray(sanitizedData.systemRoles) && sanitizedData.systemRoles.includes('ARTIST'))
     ) {
-      const existingArtist = await this.prisma.artist.findUnique({
+      await this.prisma.artist.upsert({
         where: { userId: id },
+        create: {
+          userId: id,
+          name: (updated.name || updated.email.split('@')[0] || 'Artiste').trim(),
+          bio: dto.bio || null,
+          imageUrl: dto.imageUrl || null,
+          bannerUrl: dto.bannerUrl || null,
+          country: dto.country || null,
+          gallery: typeof dto.gallery === 'object' ? JSON.stringify(dto.gallery) : dto.gallery || null,
+        },
+        update: {
+          name: (updated.name || 'Artiste').trim(),
+          ...(dto.bio !== undefined ? { bio: dto.bio } : {}),
+          ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
+          ...(dto.bannerUrl !== undefined ? { bannerUrl: dto.bannerUrl } : {}),
+          ...(dto.country !== undefined ? { country: dto.country } : {}),
+          ...(dto.gallery !== undefined
+            ? { gallery: typeof dto.gallery === 'object' ? JSON.stringify(dto.gallery) : dto.gallery }
+            : {}),
+        },
       });
-      if (!existingArtist) {
-        await this.prisma.artist.create({
-          data: {
-            name: (updated.name || updated.email.split('@')[0] || 'Artiste').trim(),
-            userId: updated.id,
-          },
-        });
-      }
     }
 
-    return updated;
+    return this.findOne(id);
   }
 
   async updateSystemRoles(id: string, roles: string[], isSuperAdmin = false) {
@@ -196,7 +225,26 @@ export class UsersService {
       }
     }
 
-    return this.update(id, { systemRoles: validRoles } as any);
+    const updated = await this.update(id, { systemRoles: validRoles } as any);
+
+    if (validRoles.includes('ARTIST')) {
+      const u = await this.prisma.user.findUnique({ where: { id } });
+      if (u) {
+        const displayName = (u.name || u.email.split('@')[0] || 'Artiste').trim();
+        await this.prisma.artist.upsert({
+          where: { userId: id },
+          create: {
+            name: displayName,
+            userId: id,
+          },
+          update: {
+            name: displayName,
+          },
+        });
+      }
+    }
+
+    return updated;
   }
 
   findAuthors() {
@@ -229,10 +277,6 @@ export class UsersService {
       },
       orderBy: { name: 'asc' },
     });
-  }
-
-  remove(id: string) {
-    return this.prisma.user.delete({ where: { id } });
   }
 
   // Favorites Management
@@ -311,5 +355,56 @@ export class UsersService {
       include: { followingArtists: true },
     });
     return user?.followingArtists || [];
+  }
+
+  async remove(id: string, requesterUserId?: string) {
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id },
+      include: { role: true },
+    });
+    if (!targetUser) throw new NotFoundException('Utilisateur non trouvé');
+
+    const targetRole = (targetUser.role?.name || '').toUpperCase();
+    const targetSystemRoles = Array.isArray(targetUser.systemRoles)
+      ? targetUser.systemRoles.map((r) => r.toUpperCase())
+      : [];
+
+    // 1. Protection absolue du SUPER_ADMIN
+    if (
+      targetRole === 'SUPER_ADMIN' ||
+      targetSystemRoles.includes('SUPER_ADMIN') ||
+      targetUser.email.toLowerCase() === 'bassahakjm@gmail.com'
+    ) {
+      throw new ForbiddenException('Le compte SUPER_ADMIN est protégé et ne peut jamais être supprimé.');
+    }
+
+    // 2. Si la cible est un ADMIN, seul un SUPER_ADMIN peut le supprimer
+    if (targetRole === 'ADMIN' || targetSystemRoles.includes('ADMIN')) {
+      if (requesterUserId) {
+        const requester = await this.prisma.user.findUnique({
+          where: { id: requesterUserId },
+          include: { role: true },
+        });
+        const reqRole = (requester?.role?.name || '').toUpperCase();
+        const reqSys = Array.isArray(requester?.systemRoles)
+          ? requester.systemRoles.map((r) => r.toUpperCase())
+          : [];
+        const isRequesterSuperAdmin =
+          reqRole === 'SUPER_ADMIN' ||
+          reqSys.includes('SUPER_ADMIN') ||
+          requester?.email.toLowerCase() === 'bassahakjm@gmail.com';
+
+        if (!isRequesterSuperAdmin) {
+          throw new ForbiddenException('Seul un SUPER_ADMIN a le droit de supprimer un compte administrateur.');
+        }
+      }
+    }
+
+    // Supprimer le profil artiste lié s'il existe
+    try {
+      await this.prisma.artist.deleteMany({ where: { userId: id } });
+    } catch {}
+
+    return this.prisma.user.delete({ where: { id } });
   }
 }

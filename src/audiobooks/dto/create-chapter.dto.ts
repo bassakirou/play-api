@@ -26,4 +26,23 @@ export class CreateChapterDto {
   @IsInt()
   @IsOptional()
   order?: number;
+
+  @ApiPropertyOptional({ description: 'Texte source / manuscrit / transcription du chapitre' })
+  @IsString()
+  @IsOptional()
+  text?: string;
+
+  @ApiPropertyOptional({ description: 'Source de la narration', default: 'HUMAN', enum: ['HUMAN', 'TTS'] })
+  @IsString()
+  @IsOptional()
+  audioSource?: string;
+
+  @ApiPropertyOptional({ description: 'Statut du chapitre', default: 'READY', enum: ['READY', 'PENDING', 'PROCESSING', 'FAILED'] })
+  @IsString()
+  @IsOptional()
+  status?: string;
+
+  @ApiPropertyOptional({ description: 'Métadonnées de timestamps / synchronisation texte-audio' })
+  @IsOptional()
+  timestamps?: any;
 }

@@ -27,4 +27,8 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   role?: string;
+
+  @ApiProperty({ required: false, type: [String] })
+  @IsOptional()
+  systemRoles?: string[];
 }

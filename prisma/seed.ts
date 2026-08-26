@@ -1,6 +1,15 @@
-import { PrismaClient } from '@prisma/client';
-import * as fs from 'fs';
+import * as dotenv from 'dotenv';
 import * as path from 'path';
+import * as fs from 'fs';
+
+const envLocalPath = path.resolve(process.cwd(), '.env.local');
+if (fs.existsSync(envLocalPath)) {
+  dotenv.config({ path: envLocalPath, override: true });
+} else {
+  dotenv.config();
+}
+
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 

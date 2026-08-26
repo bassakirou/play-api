@@ -54,7 +54,7 @@ export class SongsService {
     return this.minio.refreshUrl(url);
   }
 
-  async create(createSongDto: CreateSongDto) {
+  async create(createSongDto: CreateSongDto, userId?: string) {
     const dto = createSongDto as unknown as Record<string, any>;
     const {
       title,
@@ -99,6 +99,27 @@ export class SongsService {
     const finalArtistIds = existingArtists.map((a) => a.id);
     const finalGroupIds = existingGroups.map((g) => g.id);
     const finalGenreIds = existingGenres.map((g) => g.id);
+
+    // Auto-link to creator's Artist profile if none specified
+    if (finalArtistIds.length === 0 && finalGroupIds.length === 0 && userId) {
+      let userArtist = await this.prisma.artist.findFirst({
+        where: { userId },
+      });
+      if (!userArtist) {
+        const u = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (u) {
+          userArtist = await this.prisma.artist.create({
+            data: {
+              name: (u.name || u.email.split('@')[0] || 'Artiste').trim(),
+              userId: u.id,
+            },
+          });
+        }
+      }
+      if (userArtist) {
+        finalArtistIds.push(userArtist.id);
+      }
+    }
 
     const isSingle = albumId ? false : (rawIsSingle ?? true);
 

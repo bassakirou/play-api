@@ -18,7 +18,7 @@ import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { MinioService } from '../storage/minio.service';
 import { VercelBlobService } from '../storage/vercel-blob.service';
 import { HlsTranscoderService } from '../storage/hls-transcoder.service';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, createReadStream } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, createReadStream, rmSync } from 'fs';
 import { Readable } from 'stream';
 
 async function streamToString(stream: any): Promise<string> {
@@ -248,8 +248,14 @@ export class FilesController {
           buffer: fileBuffer,
           contentType: file.mimetype || 'audio/mpeg',
         });
+        if ((file as any)?.path && existsSync((file as any).path)) {
+          try { rmSync((file as any).path); } catch {}
+        }
         return { url: typeof url === 'string' ? url : (url as any).url || url };
       } catch (err) {
+        if ((file as any)?.path && existsSync((file as any).path)) {
+          try { rmSync((file as any).path); } catch {}
+        }
         console.error(`[FilesController] MinIO audio upload failed: ${err.message}`);
         throw new BadRequestException(`Échec de l'upload audio vers MinIO: ${err.message}`);
       }
@@ -319,10 +325,124 @@ export class FilesController {
     throw new BadRequestException('MinIO storage service is not enabled');
   }
 
+  @Post('analyze-video')
+  @UseInterceptors(FileInterceptor('file', { storage: diskVideoStorage() }))
+  async analyzeVideo(
+    @UploadedFile() file?: Express.Multer.File,
+    @Req() req?: any,
+  ) {
+    let targetPath = file?.path;
+    let cleanupNeeded = false;
+
+    if (!targetPath && req?.body?.url) {
+      const url = req.body.url;
+      if (url.includes('/uploads/')) {
+        const relativePath = url.substring(url.indexOf('/uploads/'));
+        const diskPath = join(process.cwd(), relativePath);
+        if (existsSync(diskPath)) targetPath = diskPath;
+      }
+      if (!targetPath) {
+        // Download into temp file for probing
+        try {
+          const tempName = `probe-${Date.now()}-${randomBytes(4).toString('hex')}.mp4`;
+          const tempPath = join(process.cwd(), 'uploads', 'videos', tempName);
+          ensureDir(join(process.cwd(), 'uploads', 'videos'));
+          const upstream = await fetch(url);
+          if (upstream.ok) {
+            const buf = Buffer.from(await upstream.arrayBuffer());
+            writeFileSync(tempPath, buf);
+            targetPath = tempPath;
+            cleanupNeeded = true;
+          }
+        } catch (e: any) {
+          console.warn('[analyzeVideo] Could not fetch remote URL:', e.message);
+        }
+      }
+    }
+
+    if (!targetPath || !existsSync(targetPath)) {
+      return {
+        width: 1280,
+        height: 720,
+        duration: 0,
+        formattedDuration: '00:00',
+        maxQuality: '720p',
+        maxQualityLabel: '720P',
+        allowedQualities: ['720p', '480p', '360p'],
+      };
+    }
+
+    try {
+      const result = await this.hlsTranscoder.analyzeVideo(targetPath);
+      return result;
+    } finally {
+      if (cleanupNeeded && targetPath && existsSync(targetPath)) {
+        try { rmSync(targetPath); } catch {}
+      }
+    }
+  }
+
+  @Post('generate-video-variants')
+  @UseInterceptors(FileInterceptor('file', { storage: diskVideoStorage() }))
+  async generateVideoVariants(
+    @UploadedFile() file?: Express.Multer.File,
+    @Req() req?: any,
+  ) {
+    let targetPath = file?.path;
+    let cleanupNeeded = false;
+
+    if (!targetPath && req?.body?.url) {
+      const url = req.body.url;
+      if (url.includes('/uploads/')) {
+        const relativePath = url.substring(url.indexOf('/uploads/'));
+        const diskPath = join(process.cwd(), relativePath);
+        if (existsSync(diskPath)) targetPath = diskPath;
+      }
+      if (!targetPath) {
+        try {
+          const tempName = `transcode-${Date.now()}-${randomBytes(4).toString('hex')}.mp4`;
+          const tempPath = join(process.cwd(), 'uploads', 'videos', tempName);
+          ensureDir(join(process.cwd(), 'uploads', 'videos'));
+          const upstream = await fetch(url);
+          if (upstream.ok) {
+            const buf = Buffer.from(await upstream.arrayBuffer());
+            writeFileSync(tempPath, buf);
+            targetPath = tempPath;
+            cleanupNeeded = true;
+          }
+        } catch (e: any) {
+          console.warn('[generateVideoVariants] Could not fetch remote URL:', e.message);
+        }
+      }
+    }
+
+    if (!targetPath || !existsSync(targetPath)) {
+      throw new BadRequestException('Aucun fichier vidéo source disponible pour le transcodage');
+    }
+
+    try {
+      const targetQualities = req?.body?.targetQualities
+        ? (Array.isArray(req.body.targetQualities) ? req.body.targetQualities : JSON.parse(req.body.targetQualities))
+        : undefined;
+
+      const result = await this.hlsTranscoder.generateVideoVariants({
+        inputPath: targetPath,
+        mediaId: req?.body?.mediaId,
+        targetQualities,
+      });
+
+      return result;
+    } finally {
+      if (cleanupNeeded && targetPath && existsSync(targetPath)) {
+        try { rmSync(targetPath); } catch {}
+      }
+    }
+  }
+
   @Post('upload-video')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: memoryStorage(),
+      storage: diskVideoStorage(),
       limits: { fileSize: 1024 * 1024 * 500 },
     }),
   )
@@ -336,19 +456,24 @@ export class FilesController {
   async uploadVideo(@UploadedFile() file?: Express.Multer.File) {
     if (!file) return { error: 'No file' };
 
-    const uniqueName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
+    const uniqueName = file.filename || `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
     const isProduction =
       process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
 
-    const fileBuffer =
-      file.buffer || ((file as any).path ? readFileSync((file as any).path) : null);
+    const fileBuffer = file.buffer || (file.path ? readFileSync(file.path) : null);
 
-    if (!fileBuffer) {
+    if (!fileBuffer && !file.path) {
       console.error('[FilesController] Error: fileBuffer is null or undefined for video upload');
       return { error: 'No video file buffer available' };
     }
 
-    if (isProduction && this.blob.isEnabled()) {
+    // Probing source video metadata
+    let analysis: any = null;
+    if (file.path && existsSync(file.path)) {
+      analysis = await this.hlsTranscoder.analyzeVideo(file.path);
+    }
+
+    if (isProduction && this.blob.isEnabled() && fileBuffer) {
       try {
         const objectName = `videos/${uniqueName}`;
         const url = await this.blob.upload({
@@ -356,7 +481,7 @@ export class FilesController {
           buffer: fileBuffer,
           contentType: file.mimetype,
         });
-        return { url };
+        return { url, rawUrl: url, analysis };
       } catch (err) {
         console.error(
           `[FilesController] Vercel Blob video upload failed: ${err.message}`,
@@ -364,7 +489,7 @@ export class FilesController {
       }
     }
 
-    if (this.minio.isEnabled()) {
+    if (this.minio.isEnabled() && fileBuffer) {
       try {
         console.log(`[FilesController] Uploading video to MinIO: ${uniqueName}`);
         const url = await this.minio.upload({
@@ -373,8 +498,15 @@ export class FilesController {
           buffer: fileBuffer,
           contentType: file.mimetype || 'video/mp4',
         });
-        return { url: typeof url === 'string' ? url : (url as any).url || url };
+        const finalUrl = typeof url === 'string' ? url : (url as any).url || url;
+        if (file.path && existsSync(file.path)) {
+          try { rmSync(file.path); } catch {}
+        }
+        return { url: finalUrl, rawUrl: finalUrl, analysis };
       } catch (err) {
+        if (file.path && existsSync(file.path)) {
+          try { rmSync(file.path); } catch {}
+        }
         console.error(`[FilesController] MinIO video upload failed: ${err.message}`);
         throw new BadRequestException(`Échec de l'upload vidéo vers MinIO: ${err.message}`);
       }

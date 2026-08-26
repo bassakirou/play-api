@@ -49,28 +49,100 @@ export class ArtistsService {
   }
 
   async findAll(type?: string) {
-    const where: any = {};
-    if (type === 'catalog') {
-      where.userId = null;
-    } else if (type === 'channel') {
-      where.userId = { not: null };
-    } else if (type === 'all') {
-      // no filter
-    } else {
-      // Par défaut, retourner les artistes du catalogue musical
-      where.userId = null;
+    // 1. Auto-synchronisation des utilisateurs ayant explicitement le rôle système ARTIST
+    try {
+      const usersWithArtistRole = await this.prisma.user.findMany({
+        where: {
+          OR: [
+            { systemRoles: { has: 'ARTIST' } },
+            { role: { name: 'ARTIST' } },
+          ],
+        },
+        include: {
+          artistProfile: true,
+        },
+      });
+
+      for (const u of usersWithArtistRole) {
+        const displayName = (u.name || u.email.split('@')[0] || 'Artiste').trim();
+        if (!u.artistProfile) {
+          await this.prisma.artist.create({
+            data: {
+              name: displayName,
+              userId: u.id,
+            },
+          });
+        } else if (u.name && u.artistProfile.name !== u.name.trim()) {
+          await this.prisma.artist.update({
+            where: { id: u.artistProfile.id },
+            data: { name: u.name.trim() },
+          });
+        }
+      }
+    } catch {
+      // ignore sync errors
     }
 
+    // 2. Nettoyage automatique des profils orphelins non-artistes sans œuvres
+    try {
+      const nonArtistOrphans = await this.prisma.artist.findMany({
+        where: {
+          userId: { not: null },
+          user: {
+            AND: [
+              { NOT: { systemRoles: { has: 'ARTIST' } } },
+              { role: { name: { not: 'ARTIST' } } },
+            ],
+          },
+          songs: { none: {} },
+          albums: { none: {} },
+        },
+      });
+      if (nonArtistOrphans.length > 0) {
+        await this.prisma.artist.deleteMany({
+          where: { id: { in: nonArtistOrphans.map((a) => a.id) } },
+        });
+      }
+    } catch {}
+
     const artists = await this.prisma.artist.findMany({
-      where: type === 'all' ? undefined : where,
+      where:
+        type === 'catalog'
+          ? { userId: null }
+          : type === 'channel'
+          ? {
+              userId: { not: null },
+              user: {
+                OR: [
+                  { systemRoles: { has: 'ARTIST' } },
+                  { role: { name: 'ARTIST' } },
+                ],
+              },
+            }
+          : {
+              OR: [
+                { userId: null }, // Artistes du catalogue (administrateur)
+                {
+                  userId: { not: null },
+                  user: {
+                    OR: [
+                      { systemRoles: { has: 'ARTIST' } },
+                      { role: { name: 'ARTIST' } },
+                    ],
+                  },
+                },
+              ],
+            },
       orderBy: { createdAt: 'desc' },
       include: {
+        user: true,
         albums: {
           include: {
             songs: true,
           },
         },
         songs: true,
+        groups: true,
         _count: {
           select: { followers: true, songs: true },
         },

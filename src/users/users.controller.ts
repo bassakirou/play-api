@@ -23,6 +23,14 @@ export class UsersController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @Get('me')
+  @ApiOperation({ summary: 'Get current user profile' })
+  getMyProfile(@Request() req) {
+    return this.usersService.findOne(req.user.userId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @Patch('me/profile')
   @ApiOperation({ summary: 'Update current user profile' })
   updateProfile(@Request() req, @Body() updateUserDto: any) {
@@ -136,7 +144,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('delete:user')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(id);
+  remove(@Request() req, @Param('id') id: string) {
+    return this.usersService.remove(id, req.user?.userId);
   }
 }

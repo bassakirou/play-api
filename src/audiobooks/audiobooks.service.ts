@@ -163,7 +163,7 @@ export class AudiobooksService {
       }
     }
 
-    return this.prisma.audiobook.create({
+    const created = await this.prisma.audiobook.create({
       data: {
         title: dto.title,
         author: authorName,
@@ -175,17 +175,42 @@ export class AudiobooksService {
         isTrending: dto.isTrending ?? false,
         rating: dto.rating ?? 5.0,
       },
-      include: {
-        chapters: true,
-        authorUser: true,
-      },
     });
+
+    if (Array.isArray(dto.chapters) && dto.chapters.length > 0) {
+      let currentStartAt = 0;
+      for (let i = 0; i < dto.chapters.length; i++) {
+        const ch = dto.chapters[i];
+        const dur = Number(ch.duration || 0);
+        await this.prisma.audiobookChapter.create({
+          data: {
+            audiobookId: created.id,
+            title: ch.title || `Chapitre ${i + 1}`,
+            duration: dur,
+            startAt: currentStartAt,
+            audioUrl: ch.audioUrl || null,
+            order: ch.order !== undefined ? Number(ch.order) : i + 1,
+            text: ch.text || null,
+            audioSource: ch.audioSource || (ch.audioUrl ? 'HUMAN' : 'TTS'),
+            status: ch.status || (ch.audioUrl ? 'READY' : 'PENDING'),
+            timestamps: ch.timestamps || null,
+          },
+        });
+        currentStartAt += dur;
+      }
+      await this.prisma.audiobook.update({
+        where: { id: created.id },
+        data: { duration: currentStartAt },
+      });
+    }
+
+    return this.findOne(created.id);
   }
 
   async update(id: string, dto: UpdateAudiobookDto) {
     await this.findOne(id);
 
-    return this.prisma.audiobook.update({
+    await this.prisma.audiobook.update({
       where: { id },
       data: {
         ...(dto.title !== undefined && { title: dto.title }),
@@ -198,13 +223,44 @@ export class AudiobooksService {
         ...(dto.isTrending !== undefined && { isTrending: dto.isTrending }),
         ...(dto.rating !== undefined && { rating: dto.rating }),
       },
-      include: {
-        chapters: {
-          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-        },
-        authorUser: true,
-      },
     });
+
+    if (Array.isArray(dto.chapters)) {
+      // Re-sync chapters
+      await this.prisma.audiobookChapter.deleteMany({
+        where: { audiobookId: id },
+      });
+
+      let currentStartAt = 0;
+      for (let i = 0; i < dto.chapters.length; i++) {
+        const ch = dto.chapters[i];
+        const dur = Number(ch.duration || 0);
+        await this.prisma.audiobookChapter.create({
+          data: {
+            audiobookId: id,
+            title: ch.title || `Chapitre ${i + 1}`,
+            duration: dur,
+            startAt: currentStartAt,
+            audioUrl: ch.audioUrl || null,
+            order: ch.order !== undefined ? Number(ch.order) : i + 1,
+            text: ch.text || null,
+            audioSource: ch.audioSource || (ch.audioUrl ? 'HUMAN' : 'TTS'),
+            status: ch.status || (ch.audioUrl ? 'READY' : 'PENDING'),
+            timestamps: ch.timestamps || null,
+          },
+        });
+        currentStartAt += dur;
+      }
+
+      await this.prisma.audiobook.update({
+        where: { id },
+        data: { duration: currentStartAt },
+      });
+    } else {
+      await this.recalculateDuration(id);
+    }
+
+    return this.findOne(id);
   }
 
   async delete(id: string) {
@@ -236,6 +292,10 @@ export class AudiobooksService {
         startAt: computedStartAt,
         audioUrl: dto.audioUrl || null,
         order: nextOrder,
+        text: dto.text || null,
+        audioSource: dto.audioSource || (dto.audioUrl ? 'HUMAN' : 'TTS'),
+        status: dto.status || (dto.audioUrl ? 'READY' : 'PENDING'),
+        timestamps: dto.timestamps || null,
       },
     });
 
@@ -260,6 +320,10 @@ export class AudiobooksService {
         ...(dto.startAt !== undefined && { startAt: dto.startAt }),
         ...(dto.audioUrl !== undefined && { audioUrl: dto.audioUrl || null }),
         ...(dto.order !== undefined && { order: dto.order }),
+        ...(dto.text !== undefined && { text: dto.text || null }),
+        ...(dto.audioSource !== undefined && { audioSource: dto.audioSource }),
+        ...(dto.status !== undefined && { status: dto.status }),
+        ...(dto.timestamps !== undefined && { timestamps: dto.timestamps }),
       },
     });
 
@@ -282,6 +346,113 @@ export class AudiobooksService {
 
     await this.recalculateDuration(audiobookId);
     return deleted;
+  }
+
+  async reorderChapters(audiobookId: string, chapterIds: string[]) {
+    await this.findOne(audiobookId);
+
+    let startAt = 0;
+    for (let i = 0; i < chapterIds.length; i++) {
+      const id = chapterIds[i];
+      const ch = await this.prisma.audiobookChapter.findUnique({ where: { id } });
+      if (ch && ch.audiobookId === audiobookId) {
+        await this.prisma.audiobookChapter.update({
+          where: { id },
+          data: {
+            order: i + 1,
+            startAt,
+          },
+        });
+        startAt += ch.duration || 0;
+      }
+    }
+
+    await this.prisma.audiobook.update({
+      where: { id: audiobookId },
+      data: { duration: startAt },
+    });
+
+    return this.findOne(audiobookId);
+  }
+
+  // --- TTS & ALIGNMENT LOGIC ---
+
+  async previewTTS(options: { text: string; voice?: string; speed?: number; language?: string }) {
+    const wordCount = options.text.trim().split(/\s+/).filter(Boolean).length;
+    const speed = options.speed || 1.0;
+    // Estimation réaliste : environ 130 mots/minute en narration posée
+    const estimatedDuration = Math.max(2, Math.round((wordCount / (130 * speed)) * 60));
+
+    // Génération de timestamps synchronisés réalistes
+    const sentences = options.text.match(/[^.!?]+[.!?]+/g) || [options.text];
+    let currentTime = 0;
+    const timestamps = sentences.map((sentence, idx) => {
+      const sentenceWords = sentence.trim().split(/\s+/).filter(Boolean).length;
+      const sentenceDuration = Math.max(1.5, (sentenceWords / (130 * speed)) * 60);
+      const start = Number(currentTime.toFixed(2));
+      const end = Number((currentTime + sentenceDuration).toFixed(2));
+      currentTime += sentenceDuration;
+      return {
+        id: `seg_${idx + 1}`,
+        text: sentence.trim(),
+        start,
+        end,
+      };
+    });
+
+    return {
+      voice: options.voice || 'Amara (Voix Féminine Douce)',
+      speed,
+      language: options.language || 'fr-FR',
+      duration: estimatedDuration,
+      wordCount,
+      timestamps,
+      sampleUrl: '/audio/sample-tts-preview.mp3',
+    };
+  }
+
+  async syncAlignment(audiobookId: string, chapterId: string) {
+    const chapter = await this.prisma.audiobookChapter.findUnique({
+      where: { id: chapterId },
+    });
+
+    if (!chapter || chapter.audiobookId !== audiobookId) {
+      throw new NotFoundException(`Chapter not found`);
+    }
+
+    if (!chapter.text) {
+      throw new Error('Le texte du chapitre est requis pour calculer l\'alignement.');
+    }
+
+    const sentences = chapter.text.match(/[^.!?]+[.!?]+/g) || [chapter.text];
+    const totalDuration = chapter.duration || 60;
+    const totalWords = chapter.text.trim().split(/\s+/).filter(Boolean).length;
+
+    let currentTime = 0;
+    const timestamps = sentences.map((sentence, idx) => {
+      const sWords = sentence.trim().split(/\s+/).filter(Boolean).length;
+      const ratio = totalWords > 0 ? sWords / totalWords : 1 / sentences.length;
+      const sDuration = ratio * totalDuration;
+      const start = Number(currentTime.toFixed(2));
+      const end = Number((currentTime + sDuration).toFixed(2));
+      currentTime += sDuration;
+      return {
+        id: `seg_${idx + 1}`,
+        text: sentence.trim(),
+        start,
+        end,
+      };
+    });
+
+    const updated = await this.prisma.audiobookChapter.update({
+      where: { id: chapterId },
+      data: {
+        timestamps,
+        status: 'READY',
+      },
+    });
+
+    return updated;
   }
 
   private async recalculateDuration(audiobookId: string) {

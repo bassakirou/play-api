@@ -118,4 +118,36 @@ export class AudiobooksController {
   ) {
     return this.audiobooksService.deleteChapter(audiobookId, chapterId);
   }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/chapters/reorder')
+  @ApiOperation({ summary: 'Réordonner les chapitres d\'un livre audio' })
+  reorderChapters(
+    @Param('id') audiobookId: string,
+    @Body('chapterIds') chapterIds: string[],
+  ) {
+    return this.audiobooksService.reorderChapters(audiobookId, chapterIds);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('tts/preview')
+  @ApiOperation({ summary: 'Générer un aperçu de narration TTS pour un texte' })
+  previewTTS(
+    @Body() body: { text: string; voice?: string; speed?: number; language?: string },
+  ) {
+    return this.audiobooksService.previewTTS(body);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/chapters/:chapterId/sync')
+  @ApiOperation({ summary: 'Calculer et synchroniser les timestamps texte-audio d\'un chapitre' })
+  syncAlignment(
+    @Param('id') audiobookId: string,
+    @Param('chapterId') chapterId: string,
+  ) {
+    return this.audiobooksService.syncAlignment(audiobookId, chapterId);
+  }
 }

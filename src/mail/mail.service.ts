@@ -47,9 +47,10 @@ export class MailService {
       .filter(Boolean);
   }
 
-  async sendResetPasswordEmail(to: string, token: string) {
-    const appUrl =
+  async sendResetPasswordEmail(to: string, token: string, customAppUrl?: string) {
+    const defaultUrl =
       this.configService.get<string>('APP_WEB_URL') || 'http://localhost:5173';
+    const appUrl = customAppUrl || defaultUrl;
     const from = this.getFromAddress();
     const resetLink = `${appUrl.replace(/\/+$/, '')}/reset-password?token=${token}`;
 
