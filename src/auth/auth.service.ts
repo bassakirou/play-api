@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { LoginDto } from './dto/login.dto';
 import { CreateUserDto } from '../users/dto/create-user.dto';
@@ -14,6 +15,7 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private mailService: MailService,
+    private configService: ConfigService,
   ) {}
 
   async validateUser(email: string, pass: string): Promise<any> {
@@ -133,7 +135,11 @@ export class AuthService {
     return { message: 'Verification code sent' };
   }
 
-  async forgotPassword(email: string, sourceOrAppUrl?: string) {
+  async forgotPassword(
+    email: string,
+    sourceOrAppUrl?: string,
+    requestOrigin?: string,
+  ) {
     const user = await this.usersService.findByEmail(email);
     if (!user) {
       // Don't reveal user existence
@@ -149,24 +155,67 @@ export class AuthService {
       resetTokenExpiry: expiry,
     });
 
-    let customUrl: string | undefined;
-    if (sourceOrAppUrl) {
-      if (
-        sourceOrAppUrl === 'studio' ||
-        sourceOrAppUrl === 'play-studio' ||
-        sourceOrAppUrl === 'creators' ||
-        sourceOrAppUrl === 'play-creators'
+    let targetBaseUrl: string | undefined;
+
+    // 1. Direct explicit URL passed in body (e.g. window.location.origin)
+    if (
+      sourceOrAppUrl &&
+      (sourceOrAppUrl.startsWith('http://') || sourceOrAppUrl.startsWith('https://'))
+    ) {
+      targetBaseUrl = sourceOrAppUrl;
+    }
+    // 2. Known source identifier ('admin', 'studio', 'front')
+    else if (
+      sourceOrAppUrl &&
+      !sourceOrAppUrl.startsWith('http://') &&
+      !sourceOrAppUrl.startsWith('https://')
+    ) {
+      const isProd = process.env.NODE_ENV === 'production';
+      const source = sourceOrAppUrl.toLowerCase();
+      if (source === 'admin' || source === 'play-admin') {
+        targetBaseUrl =
+          this.configService.get<string>('APP_ADMIN_URL') ||
+          (isProd ? 'https://admin.pyramidplay.cm' : 'http://localhost:5173');
+      } else if (
+        source === 'studio' ||
+        source === 'play-studio' ||
+        source === 'creators' ||
+        source === 'play-creators'
       ) {
-        customUrl =
-          process.env.APP_STUDIO_URL ||
-          process.env.APP_CREATORS_URL ||
-          'http://localhost:5175';
-      } else if (sourceOrAppUrl.startsWith('http://') || sourceOrAppUrl.startsWith('https://')) {
-        customUrl = sourceOrAppUrl;
+        targetBaseUrl =
+          this.configService.get<string>('APP_STUDIO_URL') ||
+          this.configService.get<string>('APP_CREATORS_URL') ||
+          (isProd ? 'https://studio.pyramidplay.com' : 'http://localhost:5175');
+      } else if (source === 'front' || source === 'play-front' || source === 'web') {
+        targetBaseUrl =
+          this.configService.get<string>('APP_WEB_URL') ||
+          (isProd ? 'https://pyramidplay.cm' : 'http://localhost:5174');
       }
     }
 
-    await this.mailService.sendResetPasswordEmail(email, token, customUrl);
+    // 3. HTTP Origin or Referer header automatically sent by browser
+    if (
+      !targetBaseUrl &&
+      requestOrigin &&
+      (requestOrigin.startsWith('http://') || requestOrigin.startsWith('https://'))
+    ) {
+      try {
+        const parsed = new URL(requestOrigin);
+        targetBaseUrl = parsed.origin;
+      } catch {
+        targetBaseUrl = requestOrigin;
+      }
+    }
+
+    // 4. Default fallback from config
+    if (!targetBaseUrl) {
+      targetBaseUrl =
+        this.configService.get<string>('APP_WEB_URL') || 'http://localhost:5173';
+    }
+
+    targetBaseUrl = targetBaseUrl.replace(/\/+$/, '');
+
+    await this.mailService.sendResetPasswordEmail(email, token, targetBaseUrl);
     return { message: 'Reset link sent.' };
   }
 

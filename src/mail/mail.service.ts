@@ -52,19 +52,30 @@ export class MailService {
       this.configService.get<string>('APP_WEB_URL') || 'http://localhost:5173';
     const appUrl = customAppUrl || defaultUrl;
     const from = this.getFromAddress();
-    const resetLink = `${appUrl.replace(/\/+$/, '')}/reset-password?token=${token}`;
+    const cleanUrl = appUrl.replace(/\/+$/, '');
+    const resetLink = `${cleanUrl}/reset-password?token=${token}`;
 
     await this.transporter.sendMail({
       from,
       to,
-      subject: 'Réinitialisation de votre mot de passe',
+      subject: 'Réinitialisation de votre mot de passe - PyramidPlay',
       html: `
-        <h1>Réinitialisation de mot de passe</h1>
-        <p>Vous avez demandé une réinitialisation de mot de passe.</p>
-        <p>Cliquez sur le lien ci-dessous pour définir un nouveau mot de passe :</p>
-        <a href="${resetLink}">Réinitialiser mon mot de passe</a>
-        <p>Ce lien est valide pour 1 heure.</p>
-        <p>Si vous n'avez pas demandé cette réinitialisation, veuillez ignorer cet email.</p>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #1e293b; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0;">
+          <div style="margin-bottom: 20px; text-align: center;">
+            <h1 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 0 0 8px 0;">Réinitialisation de votre mot de passe</h1>
+            <p style="color: #64748b; font-size: 14px; margin: 0;">Vous avez demandé à réinitialiser le mot de passe de votre compte PyramidPlay.</p>
+          </div>
+          <div style="background-color: #f8fafc; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 20px;">
+            <p style="font-size: 14px; color: #334155; margin: 0 0 16px 0;">Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe :</p>
+            <a href="${resetLink}" style="display: inline-block; background-color: #f59e0b; color: #0b1326; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Réinitialiser mon mot de passe</a>
+            <p style="font-size: 12px; color: #94a3b8; margin: 16px 0 0 0;">Ce lien expirera automatiquement dans 1 heure.</p>
+          </div>
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+            <p style="margin: 0 0 8px 0;">Si le bouton ne fonctionne pas, vous pouvez copier-coller ce lien directement dans votre navigateur :</p>
+            <p style="margin: 0; word-break: break-all;"><a href="${resetLink}" style="color: #d97706; text-decoration: underline;">${resetLink}</a></p>
+            <p style="margin: 16px 0 0 0; color: #cbd5e1;">Si vous n'avez pas demandé cette réinitialisation, veuillez ignorer cet e-mail en toute sécurité.</p>
+          </div>
+        </div>
       `,
     });
   }

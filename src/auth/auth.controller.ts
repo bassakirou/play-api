@@ -42,8 +42,16 @@ export class AuthController {
   }
 
   @Post('forgot-password')
-  forgotPassword(@Body() body: { email: string; source?: string; appUrl?: string }) {
-    return this.authService.forgotPassword(body.email, body.source || body.appUrl);
+  forgotPassword(
+    @Body() body: { email: string; source?: string; appUrl?: string },
+    @Request() req: any,
+  ) {
+    const origin = req?.headers?.['origin'] || req?.headers?.['referer'];
+    return this.authService.forgotPassword(
+      body.email,
+      body.appUrl || body.source,
+      origin,
+    );
   }
 
   @Post('reset-password')
