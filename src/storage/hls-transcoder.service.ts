@@ -148,6 +148,58 @@ export class HlsTranscoderService {
   }
 
   /**
+   * Extracts a poster frame snapshot from a video using ffmpeg at 1s (or 0.1s).
+   */
+  async extractPosterFrame(inputPath: string, outputPath: string): Promise<boolean> {
+    try {
+      const cmd = `ffmpeg -y -ss 00:00:01 -i "${inputPath}" -vframes 1 -q:v 2 "${outputPath}"`;
+      await execAsync(cmd);
+      return existsSync(outputPath);
+    } catch {
+      try {
+        const fallbackCmd = `ffmpeg -y -ss 00:00:00.1 -i "${inputPath}" -vframes 1 -q:v 2 "${outputPath}"`;
+        await execAsync(fallbackCmd);
+        return existsSync(outputPath);
+      } catch (err2: any) {
+        this.logger.warn(`Failed to extract poster frame: ${err2.message}`);
+        return false;
+      }
+    }
+  }
+
+  /**
+   * Extracts a poster frame and uploads it to MinIO bucket 'images' as a JPEG poster.
+   */
+  async generateAndUploadPoster(inputPath: string, uniqueBaseName: string): Promise<string | null> {
+    const tempDir = join(process.cwd(), 'uploads');
+    if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true });
+    const tempPoster = join(tempDir, `poster-${Date.now()}-${randomBytes(4).toString('hex')}.jpg`);
+    try {
+      const ok = await this.extractPosterFrame(inputPath, tempPoster);
+      if (!ok || !existsSync(tempPoster)) return null;
+
+      const buffer = readFileSync(tempPoster);
+      const objectName = `posters/${uniqueBaseName}.jpg`;
+
+      const uploadRes = await this.minio.upload({
+        bucket: 'images',
+        objectName,
+        buffer,
+        contentType: 'image/jpeg',
+      });
+
+      return typeof uploadRes === 'string' ? uploadRes : (uploadRes as any).url || uploadRes;
+    } catch (err: any) {
+      this.logger.warn(`Failed to generate and upload poster: ${err.message}`);
+      return null;
+    } finally {
+      if (existsSync(tempPoster)) {
+        try { rmSync(tempPoster); } catch {}
+      }
+    }
+  }
+
+  /**
    * Transcodes an audio file to HLS (.m3u8 + .ts segments) and uploads to MinIO.
    */
   async transcodeAudioAndUpload(opts: {

@@ -4,7 +4,8 @@ import { MinioService } from '../storage/minio.service';
 import { VercelBlobService } from '../storage/vercel-blob.service';
 import { HlsTranscoderService } from '../storage/hls-transcoder.service';
 import { CreateMediaAssetDto } from './dto/create-media-asset.dto';
-import { extname } from 'path';
+import { extname, join } from 'path';
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { randomBytes } from 'crypto';
 
 @Injectable()
@@ -134,6 +135,24 @@ export class MediaService {
       throw new BadRequestException("Service de stockage MinIO indisponible pour l'enregistrement du média.");
     }
 
+    let posterUrl: string | null = null;
+    if (detectedType === 'video' && fileBuffer) {
+      const tempDir = join(process.cwd(), 'uploads');
+      if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true });
+      const tempVideo = join(tempDir, `vid-${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`);
+      try {
+        writeFileSync(tempVideo, fileBuffer);
+        const posterBaseName = `${Date.now()}-${randomBytes(6).toString('hex')}`;
+        posterUrl = await this.hlsTranscoder.generateAndUploadPoster(tempVideo, posterBaseName);
+      } catch (err: any) {
+        this.logger.warn(`[MediaService] Could not generate video poster: ${err.message}`);
+      } finally {
+        if (existsSync(tempVideo)) {
+          try { rmSync(tempVideo); } catch {}
+        }
+      }
+    }
+
     const title = meta?.title || file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
     const format = ext.toUpperCase();
     const size = file.size || (fileBuffer ? fileBuffer.length : 0);
@@ -144,7 +163,7 @@ export class MediaService {
         title,
         filename: file.originalname,
         fileUrl,
-        thumbnailUrl: detectedType === 'image' ? fileUrl : undefined,
+        thumbnailUrl: detectedType === 'image' ? fileUrl : posterUrl || undefined,
         type: detectedType,
         mimeType: file.mimetype,
         size,

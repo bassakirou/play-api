@@ -544,10 +544,18 @@ export class FilesController {
       return { error: 'No video file buffer available' };
     }
 
-    // Probing source video metadata
+    // Probing source video metadata & extracting video poster snapshot
     let analysis: any = null;
+    let posterUrl: string | null = null;
+
     if (file.path && existsSync(file.path)) {
       analysis = await this.hlsTranscoder.analyzeVideo(file.path);
+      try {
+        const posterBaseName = `${Date.now()}-${randomBytes(6).toString('hex')}`;
+        posterUrl = await this.hlsTranscoder.generateAndUploadPoster(file.path, posterBaseName);
+      } catch (err: any) {
+        console.warn(`[FilesController] Could not generate video poster: ${err.message}`);
+      }
     }
 
     let finalUrl = '';
@@ -603,7 +611,7 @@ export class FilesController {
         title,
         filename: file.originalname,
         fileUrl: finalUrl,
-        thumbnailUrl: analysis?.thumbnailUrl || undefined,
+        thumbnailUrl: posterUrl || analysis?.thumbnailUrl || undefined,
         type: 'video',
         mimeType: file.mimetype || 'video/mp4',
         size: file.size || (fileBuffer ? fileBuffer.length : 0),
@@ -614,7 +622,13 @@ export class FilesController {
       console.warn(`[FilesController] Failed to auto-register video MediaAsset: ${e.message}`);
     }
 
-    return { url: finalUrl, rawUrl: finalUrl, analysis };
+    return {
+      url: finalUrl,
+      rawUrl: finalUrl,
+      posterUrl,
+      thumbnailUrl: posterUrl || analysis?.thumbnailUrl || undefined,
+      analysis,
+    };
   }
 
   @Get('resolved-audio')
