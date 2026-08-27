@@ -433,6 +433,17 @@ export class FilesController {
     }
   }
 
+  @Post('inspect-video-variants')
+  async inspectVideoVariantsPost(@Req() req: any) {
+    const url = req?.body?.url || req?.query?.url || '';
+    return this.hlsTranscoder.inspectVideoVariants(url);
+  }
+
+  @Get('inspect-video-variants')
+  async inspectVideoVariantsGet(@Query('url') url: string) {
+    return this.hlsTranscoder.inspectVideoVariants(url || '');
+  }
+
   @Post('generate-video-variants')
   @UseInterceptors(FileInterceptor('file', { storage: diskVideoStorage() }))
   async generateVideoVariants(

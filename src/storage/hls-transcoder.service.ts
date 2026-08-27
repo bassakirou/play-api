@@ -385,6 +385,166 @@ export class HlsTranscoderService {
   }
 
   /**
+   * Inspects an existing video URL or HLS master playlist and reconstructs the quality variants & analysis
+   */
+  async inspectVideoVariants(url: string): Promise<{
+    masterUrl: string;
+    variants: Partial<Record<QualityTier, string>>;
+    analysis: VideoAnalysisResult;
+  }> {
+    const publicBaseUrl =
+      process.env.MINIO_PUBLIC_URL ||
+      (process.env.NODE_ENV === 'production' || !!process.env.VERCEL
+        ? 'https://media.pyramidplay.cm'
+        : 'http://localhost:9000');
+
+    if (!url) {
+      return {
+        masterUrl: '',
+        variants: {},
+        analysis: {
+          width: 1280,
+          height: 720,
+          duration: 0,
+          formattedDuration: '00:00',
+          maxQuality: '720p',
+          maxQualityLabel: '720P',
+          allowedQualities: ['720p', '480p', '360p'],
+        },
+      };
+    }
+
+    const hlsMatch = url.match(/\/(videos|play-videos)?\/?hls\/([^/?#]+)/);
+    if (hlsMatch || url.endsWith('.m3u8')) {
+      const mediaId = hlsMatch ? hlsMatch[2] : url.split('/').slice(-2, -1)[0];
+      const masterUrl = mediaId
+        ? `${publicBaseUrl}/videos/hls/${mediaId}/master.m3u8`
+        : url;
+
+      let masterContent: string | null = null;
+
+      // 1. Try reading from MinIO
+      if (this.minio.isEnabled() && mediaId) {
+        try {
+          const { stream } = await this.minio.getObjectStream('videos', `hls/${mediaId}/master.m3u8`);
+          const chunks: Buffer[] = [];
+          masterContent = await new Promise<string>((resolve, reject) => {
+            stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+            stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+            stream.on('error', reject);
+          });
+        } catch {
+          // Ignore MinIO read error, proceed to fallback
+        }
+      }
+
+      // 2. Try reading from local uploads if available
+      if (!masterContent && mediaId) {
+        const localMaster = join(process.cwd(), 'uploads', 'temp_hls_video', mediaId, 'master.m3u8');
+        if (existsSync(localMaster)) {
+          try {
+            masterContent = readFileSync(localMaster, 'utf-8');
+          } catch {}
+        }
+      }
+
+      // 3. Try HTTP fetch
+      if (!masterContent) {
+        try {
+          const res = await fetch(url.startsWith('http') ? url : `${publicBaseUrl}${url.startsWith('/') ? '' : '/'}${url}`);
+          if (res.ok) {
+            masterContent = await res.text();
+          }
+        } catch {}
+      }
+
+      const foundQualities: QualityTier[] = [];
+      let maxWidth = 0;
+      let maxHeight = 0;
+
+      if (masterContent) {
+        const lines = masterContent.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (line.startsWith('#EXT-X-STREAM-INF:')) {
+            const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/);
+            if (resMatch) {
+              const w = parseInt(resMatch[1], 10);
+              const h = parseInt(resMatch[2], 10);
+              if (w > maxWidth) maxWidth = w;
+              if (h > maxHeight) maxHeight = h;
+            }
+            const nameMatch = line.match(/NAME="([^"]+)"/);
+            if (nameMatch && (['1080p', '720p', '480p', '360p'] as string[]).includes(nameMatch[1])) {
+              foundQualities.push(nameMatch[1] as QualityTier);
+            }
+          } else if (line.endsWith('index.m3u8')) {
+            const q = line.replace(/\/index\.m3u8$/, '').trim() as QualityTier;
+            if ((['1080p', '720p', '480p', '360p'] as QualityTier[]).includes(q) && !foundQualities.includes(q)) {
+              foundQualities.push(q);
+            }
+          }
+        }
+      }
+
+      // If we couldn't parse specific qualities from masterContent, default to matching known presets
+      if (foundQualities.length === 0) {
+        foundQualities.push('720p', '480p', '360p');
+        maxWidth = 1280;
+        maxHeight = 720;
+      }
+
+      const variants: Partial<Record<QualityTier, string>> = {};
+      foundQualities.forEach((q) => {
+        variants[q] = mediaId
+          ? `${publicBaseUrl}/videos/hls/${mediaId}/${q}/index.m3u8`
+          : `${url.substring(0, url.lastIndexOf('/'))}/${q}/index.m3u8`;
+      });
+
+      let maxQuality: QualityTier = '720p';
+      if (maxHeight >= 1080 || foundQualities.includes('1080p')) maxQuality = '1080p';
+      else if (maxHeight >= 720 || foundQualities.includes('720p')) maxQuality = '720p';
+      else if (maxHeight >= 480 || foundQualities.includes('480p')) maxQuality = '480p';
+      else maxQuality = '360p';
+
+      const allowedQualities: QualityTier[] = [];
+      if (maxQuality === '1080p') allowedQualities.push('1080p', '720p', '480p', '360p');
+      else if (maxQuality === '720p') allowedQualities.push('720p', '480p', '360p');
+      else if (maxQuality === '480p') allowedQualities.push('480p', '360p');
+      else allowedQualities.push('360p');
+
+      return {
+        masterUrl,
+        variants,
+        analysis: {
+          width: maxWidth || QUALITY_PRESETS[maxQuality].width,
+          height: maxHeight || QUALITY_PRESETS[maxQuality].height,
+          duration: 0,
+          formattedDuration: '00:00',
+          maxQuality,
+          maxQualityLabel: maxQuality.toUpperCase(),
+          allowedQualities,
+        },
+      };
+    }
+
+    // Direct MP4 or non-HLS URL fallback:
+    return {
+      masterUrl: url,
+      variants: {},
+      analysis: {
+        width: 1280,
+        height: 720,
+        duration: 0,
+        formattedDuration: '00:00',
+        maxQuality: '720p',
+        maxQualityLabel: '720P',
+        allowedQualities: ['720p', '480p', '360p'],
+      },
+    };
+  }
+
+  /**
    * Single-command fallback / legacy
    */
   async transcodeVideoAndUpload(opts: {
