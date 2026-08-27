@@ -382,6 +382,12 @@ export class FilesController {
     @UploadedFile() file?: Express.Multer.File,
     @Req() req?: any,
   ) {
+    const url = req?.body?.url;
+    if (!file && url && (url.includes('/hls/') || url.endsWith('.m3u8'))) {
+      const inspected = await this.hlsTranscoder.inspectVideoVariants(url);
+      return inspected.analysis;
+    }
+
     let targetPath = file?.path;
     let cleanupNeeded = false;
 
@@ -450,11 +456,15 @@ export class FilesController {
     @UploadedFile() file?: Express.Multer.File,
     @Req() req?: any,
   ) {
+    const url = req?.body?.url;
+    if (!file && url && (url.includes('/hls/') || url.endsWith('.m3u8'))) {
+      return this.hlsTranscoder.inspectVideoVariants(url);
+    }
+
     let targetPath = file?.path;
     let cleanupNeeded = false;
 
-    if (!targetPath && req?.body?.url) {
-      const url = req.body.url;
+    if (!targetPath && url) {
       if (url.includes('/uploads/')) {
         const relativePath = url.substring(url.indexOf('/uploads/'));
         const diskPath = join(process.cwd(), relativePath);

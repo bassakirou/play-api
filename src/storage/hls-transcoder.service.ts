@@ -95,7 +95,8 @@ export class HlsTranscoderService {
    * Probes video metadata with ffprobe
    */
   async analyzeVideo(inputPath: string): Promise<VideoAnalysisResult> {
-    const ffprobeCmd = `ffprobe -v error -select_streams v:0 -show_entries stream=width,height,duration -show_entries format=duration -of json "${inputPath}"`;
+    const normalizedInput = inputPath.replace(/\\/g, '/');
+    const ffprobeCmd = `ffprobe -v error -select_streams v:0 -show_entries stream=width,height,duration -show_entries format=duration -of json "${normalizedInput}"`;
     try {
       const { stdout } = await execAsync(ffprobeCmd);
       const data = JSON.parse(stdout || '{}');
@@ -151,13 +152,15 @@ export class HlsTranscoderService {
    * Extracts a poster frame snapshot from a video using ffmpeg at 1s (or 0.1s).
    */
   async extractPosterFrame(inputPath: string, outputPath: string): Promise<boolean> {
+    const inPath = inputPath.replace(/\\/g, '/');
+    const outPath = outputPath.replace(/\\/g, '/');
     try {
-      const cmd = `ffmpeg -y -ss 00:00:01 -i "${inputPath}" -vframes 1 -q:v 2 "${outputPath}"`;
+      const cmd = `ffmpeg -y -ss 00:00:01 -i "${inPath}" -vframes 1 -q:v 2 "${outPath}"`;
       await execAsync(cmd);
       return existsSync(outputPath);
     } catch {
       try {
-        const fallbackCmd = `ffmpeg -y -ss 00:00:00.1 -i "${inputPath}" -vframes 1 -q:v 2 "${outputPath}"`;
+        const fallbackCmd = `ffmpeg -y -ss 00:00:00.1 -i "${inPath}" -vframes 1 -q:v 2 "${outPath}"`;
         await execAsync(fallbackCmd);
         return existsSync(outputPath);
       } catch (err2: any) {
@@ -213,10 +216,11 @@ export class HlsTranscoderService {
       mkdirSync(tempDir, { recursive: true });
     }
 
-    const playlistPath = join(tempDir, 'playlist.m3u8');
-    const segmentPattern = join(tempDir, 'segment_%03d.ts');
+    const inPath = opts.inputPath.replace(/\\/g, '/');
+    const playlistPath = join(tempDir, 'playlist.m3u8').replace(/\\/g, '/');
+    const segmentPattern = join(tempDir, 'segment_%03d.ts').replace(/\\/g, '/');
 
-    const command = `ffmpeg -y -i "${opts.inputPath}" -c:a aac -b:a 192k -hls_time 6 -hls_playlist_type vod -hls_segment_filename "${segmentPattern}" "${playlistPath}"`;
+    const command = `ffmpeg -y -i "${inPath}" -c:a aac -b:a 192k -hls_time 6 -hls_playlist_type vod -hls_segment_filename "${segmentPattern}" "${playlistPath}"`;
 
     try {
       this.logger.log(`Starting audio HLS transcoding for media ${mediaId}...`);
@@ -271,6 +275,13 @@ export class HlsTranscoderService {
     variants: Partial<Record<QualityTier, string>>;
     analysis: VideoAnalysisResult;
   }> {
+    const inPath = opts.inputPath.replace(/\\/g, '/');
+
+    // If input is already an HLS master or variant playlist, return its inspected variants directly!
+    if (inPath.endsWith('.m3u8') || inPath.includes('/hls/')) {
+      return this.inspectVideoVariants(inPath);
+    }
+
     const mediaId = opts.mediaId || randomBytes(8).toString('hex');
     const tempDir = join(process.cwd(), 'uploads', 'temp_hls_video', mediaId);
 
@@ -278,7 +289,7 @@ export class HlsTranscoderService {
       mkdirSync(tempDir, { recursive: true });
     }
 
-    const analysis = await this.analyzeVideo(opts.inputPath);
+    const analysis = await this.analyzeVideo(inPath);
     this.logger.log(`Video analysis for ${mediaId}: ${analysis.width}x${analysis.height}, max allowed: ${analysis.maxQuality}`);
 
     // Filter requested qualities so we NEVER upscale above the source resolution
@@ -309,13 +320,13 @@ export class HlsTranscoderService {
           mkdirSync(qualityDir, { recursive: true });
         }
 
-        const playlistPath = join(qualityDir, 'index.m3u8');
-        const segmentPattern = join(qualityDir, 'segment_%03d.ts');
+        const playlistPath = join(qualityDir, 'index.m3u8').replace(/\\/g, '/');
+        const segmentPattern = join(qualityDir, 'segment_%03d.ts').replace(/\\/g, '/');
 
         // Scale preserving aspect ratio within bounding box, making width/height even
         const scaleFilter = `scale='min(${preset.width},iw)':'min(${preset.height},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
 
-        const ffmpegCmd = `ffmpeg -y -i "${opts.inputPath}" -vf "${scaleFilter}" -c:v libx264 -preset fast -b:v ${preset.videoBitrate} -maxrate ${preset.maxRate} -bufsize ${preset.bufSize} -c:a aac -b:a ${preset.audioBitrate} -hls_time 6 -hls_playlist_type vod -hls_segment_filename "${segmentPattern}" "${playlistPath}"`;
+        const ffmpegCmd = `ffmpeg -y -i "${inPath}" -vf "${scaleFilter}" -c:v libx264 -preset fast -b:v ${preset.videoBitrate} -maxrate ${preset.maxRate} -bufsize ${preset.bufSize} -c:a aac -b:a ${preset.audioBitrate} -hls_time 6 -hls_playlist_type vod -hls_segment_filename "${segmentPattern}" "${playlistPath}"`;
 
         this.logger.log(`Transcoding ${quality} for ${mediaId}...`);
         await execAsync(ffmpegCmd);
