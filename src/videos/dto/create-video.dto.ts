@@ -51,9 +51,10 @@ export class CreateVideoDto {
   @IsString({ each: true })
   tags?: string[];
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsUUID()
-  genreId: string;
+  genreId?: string;
 
   @ApiProperty({ required: false, type: [String] })
   @IsArray()

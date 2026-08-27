@@ -18,7 +18,8 @@ import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { MinioService } from '../storage/minio.service';
 import { VercelBlobService } from '../storage/vercel-blob.service';
 import { HlsTranscoderService } from '../storage/hls-transcoder.service';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, createReadStream, rmSync } from 'fs';
+import { MediaService } from '../media/media.service';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, createReadStream, createWriteStream, rmSync } from 'fs';
 import { Readable } from 'stream';
 
 async function streamToString(stream: any): Promise<string> {
@@ -77,6 +78,7 @@ export class FilesController {
     private readonly minio: MinioService,
     private readonly blob: VercelBlobService,
     private readonly hlsTranscoder: HlsTranscoderService,
+    private readonly mediaService: MediaService,
   ) { }
 
   @Get('resolved-image')
@@ -206,7 +208,7 @@ export class FilesController {
       properties: { file: { type: 'string', format: 'binary' } },
     },
   })
-  async uploadAudio(@UploadedFile() file?: Express.Multer.File) {
+  async uploadAudio(@UploadedFile() file?: Express.Multer.File, @Req() req?: any) {
     if (!file) return { error: 'No file' };
 
     const uniqueName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
@@ -214,6 +216,7 @@ export class FilesController {
       process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
 
     const fileBuffer = file.buffer || ((file as any).path ? readFileSync((file as any).path) : null);
+    let finalUrl = '';
 
     // 1. En PRODUCTION : Priorité à Vercel Blob s'il est activé
     if (isProduction && this.blob.isEnabled() && fileBuffer) {
@@ -222,12 +225,11 @@ export class FilesController {
         console.log(
           `[FilesController] Production: Uploading audio to Vercel Blob: ${objectName}`,
         );
-        const url = await this.blob.upload({
+        finalUrl = await this.blob.upload({
           objectName,
           buffer: fileBuffer,
           contentType: file.mimetype,
         });
-        return { url };
       } catch (err) {
         console.error(
           `[FilesController] Vercel Blob upload failed: ${err.message}`,
@@ -236,7 +238,7 @@ export class FilesController {
     }
 
     // 2. En LOCAL (ou MinIO sur VPS)
-    if (this.minio.isEnabled() && fileBuffer) {
+    if (!finalUrl && this.minio.isEnabled() && fileBuffer) {
       try {
         const env = isProduction ? 'Production Fallback' : 'Local';
         console.log(
@@ -248,10 +250,7 @@ export class FilesController {
           buffer: fileBuffer,
           contentType: file.mimetype || 'audio/mpeg',
         });
-        if ((file as any)?.path && existsSync((file as any).path)) {
-          try { rmSync((file as any).path); } catch {}
-        }
-        return { url: typeof url === 'string' ? url : (url as any).url || url };
+        finalUrl = typeof url === 'string' ? url : (url as any).url || url;
       } catch (err) {
         if ((file as any)?.path && existsSync((file as any).path)) {
           try { rmSync((file as any).path); } catch {}
@@ -261,7 +260,34 @@ export class FilesController {
       }
     }
 
-    throw new BadRequestException('MinIO storage service is not enabled or file buffer missing');
+    if ((file as any)?.path && existsSync((file as any).path)) {
+      try { rmSync((file as any).path); } catch {}
+    }
+
+    if (!finalUrl) {
+      throw new BadRequestException('MinIO storage service is not enabled or file buffer missing');
+    }
+
+    const userId = req?.body?.userId || req?.user?.id || req?.user?.sub || req?.user?.userId;
+    const ext = extname(file.originalname).toLowerCase().replace('.', '');
+    const title = file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+
+    try {
+      await this.mediaService.create({
+        title,
+        filename: file.originalname,
+        fileUrl: finalUrl,
+        type: 'audio',
+        mimeType: file.mimetype || 'audio/mpeg',
+        size: file.size || (fileBuffer ? fileBuffer.length : 0),
+        duration: req?.body?.duration ? Number(req.body.duration) : 0,
+        format: ext.toUpperCase(),
+      }, userId);
+    } catch (e: any) {
+      console.warn(`[FilesController] Failed to auto-register audio MediaAsset: ${e.message}`);
+    }
+
+    return { url: finalUrl };
   }
 
   @Post('upload-image')
@@ -273,12 +299,14 @@ export class FilesController {
       properties: { file: { type: 'string', format: 'binary' } },
     },
   })
-  async uploadImage(@UploadedFile() file?: Express.Multer.File) {
+  async uploadImage(@UploadedFile() file?: Express.Multer.File, @Req() req?: any) {
     if (!file) return { error: 'No file' };
 
     const uniqueName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
     const isProduction =
       process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
+    let finalUrl = '';
 
     // 1. En PRODUCTION : Priorité absolue à Vercel Blob
     if (isProduction && this.blob.isEnabled()) {
@@ -287,12 +315,11 @@ export class FilesController {
         console.log(
           `[FilesController] Production: Uploading image to Vercel Blob: ${objectName}`,
         );
-        const url = await this.blob.upload({
+        finalUrl = await this.blob.upload({
           objectName,
           buffer: file.buffer,
           contentType: file.mimetype,
         });
-        return { url };
       } catch (err) {
         console.error(
           `[FilesController] Vercel Blob Image upload failed: ${err.message}`,
@@ -301,7 +328,7 @@ export class FilesController {
     }
 
     // 2. Utilisation de MinIO
-    if (this.minio.isEnabled()) {
+    if (!finalUrl && this.minio.isEnabled()) {
       try {
         const env = isProduction ? 'Production Fallback' : 'Local';
         console.log(
@@ -313,7 +340,7 @@ export class FilesController {
           buffer: file.buffer,
           contentType: file.mimetype,
         });
-        return { url: typeof url === 'string' ? url : (url as any).url || url };
+        finalUrl = typeof url === 'string' ? url : (url as any).url || url;
       } catch (err) {
         console.error(
           `[FilesController] MinIO Image upload failed: ${err.message}`,
@@ -322,7 +349,31 @@ export class FilesController {
       }
     }
 
-    throw new BadRequestException('MinIO storage service is not enabled');
+    if (!finalUrl) {
+      throw new BadRequestException('MinIO storage service is not enabled');
+    }
+
+    const userId = req?.body?.userId || req?.user?.id || req?.user?.sub || req?.user?.userId;
+    const ext = extname(file.originalname).toLowerCase().replace('.', '');
+    const title = file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+
+    try {
+      await this.mediaService.create({
+        title,
+        filename: file.originalname,
+        fileUrl: finalUrl,
+        thumbnailUrl: finalUrl,
+        type: 'image',
+        mimeType: file.mimetype || 'image/jpeg',
+        size: file.size || (file.buffer ? file.buffer.length : 0),
+        duration: 0,
+        format: ext.toUpperCase(),
+      }, userId);
+    } catch (e: any) {
+      console.warn(`[FilesController] Failed to auto-register image MediaAsset: ${e.message}`);
+    }
+
+    return { url: finalUrl };
   }
 
   @Post('analyze-video')
@@ -398,6 +449,32 @@ export class FilesController {
         const diskPath = join(process.cwd(), relativePath);
         if (existsSync(diskPath)) targetPath = diskPath;
       }
+      if (!targetPath && this.minio.isEnabled()) {
+        const match = url.match(/\/(videos|play-videos)\/([^?]+)(\?.*)?$/);
+        if (match && match[2]) {
+          const bucket = match[1] === 'play-videos' ? 'videos' : match[1];
+          const objectName = match[2];
+          try {
+            const { stream } = await this.minio.getObjectStream(bucket, objectName);
+            const tempName = `transcode-${Date.now()}-${randomBytes(4).toString('hex')}.mp4`;
+            const tempPath = join(process.cwd(), 'uploads', 'videos', tempName);
+            ensureDir(join(process.cwd(), 'uploads', 'videos'));
+            const writeStream = createWriteStream(tempPath);
+            await new Promise<void>((resolve, reject) => {
+              stream.pipe(writeStream);
+              stream.on('error', reject);
+              writeStream.on('finish', () => resolve());
+              writeStream.on('error', reject);
+            });
+            if (existsSync(tempPath)) {
+              targetPath = tempPath;
+              cleanupNeeded = true;
+            }
+          } catch (e: any) {
+            console.warn('[generateVideoVariants] MinIO stream download failed, falling back to HTTP fetch:', e.message);
+          }
+        }
+      }
       if (!targetPath) {
         try {
           const tempName = `transcode-${Date.now()}-${randomBytes(4).toString('hex')}.mp4`;
@@ -453,7 +530,7 @@ export class FilesController {
       properties: { file: { type: 'string', format: 'binary' } },
     },
   })
-  async uploadVideo(@UploadedFile() file?: Express.Multer.File) {
+  async uploadVideo(@UploadedFile() file?: Express.Multer.File, @Req() req?: any) {
     if (!file) return { error: 'No file' };
 
     const uniqueName = file.filename || `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
@@ -473,15 +550,16 @@ export class FilesController {
       analysis = await this.hlsTranscoder.analyzeVideo(file.path);
     }
 
+    let finalUrl = '';
+
     if (isProduction && this.blob.isEnabled() && fileBuffer) {
       try {
         const objectName = `videos/${uniqueName}`;
-        const url = await this.blob.upload({
+        finalUrl = await this.blob.upload({
           objectName,
           buffer: fileBuffer,
           contentType: file.mimetype,
         });
-        return { url, rawUrl: url, analysis };
       } catch (err) {
         console.error(
           `[FilesController] Vercel Blob video upload failed: ${err.message}`,
@@ -489,7 +567,7 @@ export class FilesController {
       }
     }
 
-    if (this.minio.isEnabled() && fileBuffer) {
+    if (!finalUrl && this.minio.isEnabled() && fileBuffer) {
       try {
         console.log(`[FilesController] Uploading video to MinIO: ${uniqueName}`);
         const url = await this.minio.upload({
@@ -498,11 +576,7 @@ export class FilesController {
           buffer: fileBuffer,
           contentType: file.mimetype || 'video/mp4',
         });
-        const finalUrl = typeof url === 'string' ? url : (url as any).url || url;
-        if (file.path && existsSync(file.path)) {
-          try { rmSync(file.path); } catch {}
-        }
-        return { url: finalUrl, rawUrl: finalUrl, analysis };
+        finalUrl = typeof url === 'string' ? url : (url as any).url || url;
       } catch (err) {
         if (file.path && existsSync(file.path)) {
           try { rmSync(file.path); } catch {}
@@ -512,7 +586,35 @@ export class FilesController {
       }
     }
 
-    throw new BadRequestException('MinIO storage service is not enabled');
+    if (file.path && existsSync(file.path)) {
+      try { rmSync(file.path); } catch {}
+    }
+
+    if (!finalUrl) {
+      throw new BadRequestException('Storage service is not enabled');
+    }
+
+    const userId = req?.body?.userId || req?.user?.id || req?.user?.sub || req?.user?.userId;
+    const ext = extname(file.originalname).toLowerCase().replace('.', '');
+    const title = file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+
+    try {
+      await this.mediaService.create({
+        title,
+        filename: file.originalname,
+        fileUrl: finalUrl,
+        thumbnailUrl: analysis?.thumbnailUrl || undefined,
+        type: 'video',
+        mimeType: file.mimetype || 'video/mp4',
+        size: file.size || (fileBuffer ? fileBuffer.length : 0),
+        duration: analysis?.duration ? Math.round(analysis.duration) : 0,
+        format: ext.toUpperCase(),
+      }, userId);
+    } catch (e: any) {
+      console.warn(`[FilesController] Failed to auto-register video MediaAsset: ${e.message}`);
+    }
+
+    return { url: finalUrl, rawUrl: finalUrl, analysis };
   }
 
   @Get('resolved-audio')
@@ -664,7 +766,7 @@ export class FilesController {
       if (this.minio.isEnabled()) {
         const match = url.match(/\/(videos|play-videos)\/([^?]+)(\?.*)?$/);
         if (match && match[2]) {
-          const bucket = match[1];
+          const bucket = match[1] === 'play-videos' ? 'videos' : match[1];
           const objectName = match[2];
           try {
             const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);

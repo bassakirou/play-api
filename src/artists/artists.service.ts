@@ -278,11 +278,20 @@ export class ArtistsService {
     const artist = await this.prisma.artist.findUnique({
       where: { id },
       include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: { select: { name: true } },
+            systemRoles: true,
+          },
+        },
         albums: {
           include: { songs: true },
         },
         songs: {
-          include: { artists: true, album: true },
+          include: { artists: true, album: true, genre: true },
         },
         _count: {
           select: { followers: true },
@@ -292,8 +301,42 @@ export class ArtistsService {
 
     if (!artist) return null;
 
+    const isCreator =
+      artist.user?.role?.name === 'CREATOR' ||
+      (artist.user?.systemRoles || []).includes('CREATOR');
+
+    // Fetch artist videos
+    const videos = await this.prisma.video.findMany({
+      where: {
+        isPublished: true,
+        OR: [
+          { artists: { some: { id } } },
+          ...(artist.userId ? [{ userId: artist.userId }] : []),
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Fetch artist audiobooks
+    const audiobooks = await this.prisma.audiobook.findMany({
+      where: {
+        OR: [
+          { author: { equals: artist.name, mode: 'insensitive' } },
+          ...(artist.userId ? [{ authorId: artist.userId }] : []),
+        ],
+      },
+      include: {
+        chapters: {
+          select: { id: true, title: true, duration: true, order: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     // Get related artists (same genre from most recent songs)
-    const genreIds = artist.songs.map((s) => s.genreId).filter((id): id is string => !!id);
+    const genreIds = artist.songs
+      .map((s) => s.genreId)
+      .filter((id): id is string => !!id);
     const relatedArtists = await this.prisma.artist.findMany({
       where: {
         id: { not: id },
@@ -303,7 +346,7 @@ export class ArtistsService {
           },
         },
       },
-      take: 5,
+      take: 6,
       include: {
         _count: {
           select: { followers: true },
@@ -313,7 +356,26 @@ export class ArtistsService {
 
     const refreshedArtist = {
       ...artist,
+      isCreator,
+      videos: await Promise.all(
+        videos.map(async (v) => ({
+          ...v,
+          thumbnailUrl: v.thumbnailUrl
+            ? await this.refreshUrl(v.thumbnailUrl)
+            : null,
+          videoUrl: v.videoUrl ? await this.refreshUrl(v.videoUrl) : null,
+        })),
+      ),
+      audiobooks: await Promise.all(
+        audiobooks.map(async (ab) => ({
+          ...ab,
+          coverUrl: ab.coverUrl ? await this.refreshUrl(ab.coverUrl) : null,
+        })),
+      ),
       imageUrl: artist.imageUrl ? await this.refreshUrl(artist.imageUrl) : null,
+      bannerUrl: artist.bannerUrl
+        ? await this.refreshUrl(artist.bannerUrl)
+        : null,
       relatedArtists: await Promise.all(
         relatedArtists.map(async (ra) => ({
           ...ra,

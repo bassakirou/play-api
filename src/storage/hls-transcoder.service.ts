@@ -242,7 +242,11 @@ export class HlsTranscoderService {
 
     this.logger.log(`Generating ${validQualities.length} HLS quality tiers for media ${mediaId}: ${validQualities.join(', ')}`);
 
-    const publicBaseUrl = process.env.MINIO_PUBLIC_URL || 'https://media.pyramidplay.cm';
+    const publicBaseUrl =
+      process.env.MINIO_PUBLIC_URL ||
+      (process.env.NODE_ENV === 'production' || !!process.env.VERCEL
+        ? 'https://media.pyramidplay.cm'
+        : 'http://localhost:9000');
     const variantUrls: Partial<Record<QualityTier, string>> = {};
 
     try {
@@ -264,7 +268,7 @@ export class HlsTranscoderService {
         this.logger.log(`Transcoding ${quality} for ${mediaId}...`);
         await execAsync(ffmpegCmd);
 
-        variantUrls[quality] = `${publicBaseUrl}/play-videos/hls/${mediaId}/${quality}/index.m3u8`;
+        variantUrls[quality] = `${publicBaseUrl}/videos/hls/${mediaId}/${quality}/index.m3u8`;
       }
 
       // Generate master.m3u8 combining all generated quality variants
@@ -311,7 +315,7 @@ export class HlsTranscoderService {
 
       rmSync(tempDir, { recursive: true, force: true });
 
-      const masterUrl = `${publicBaseUrl}/play-videos/hls/${mediaId}/master.m3u8`;
+      const masterUrl = `${publicBaseUrl}/videos/hls/${mediaId}/master.m3u8`;
       this.logger.log(`Multi-quality HLS stream ready at: ${masterUrl}`);
 
       return {

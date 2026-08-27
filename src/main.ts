@@ -35,7 +35,7 @@ async function bootstrap() {
   if (!process.env.SMTP_FROM)
     process.env.SMTP_FROM = '"PyramidPlay Support" <support@pyramidplay.com>';
   if (!process.env.APP_WEB_URL)
-    process.env.APP_WEB_URL = 'http://localhost:5173';
+    process.env.APP_WEB_URL = 'http://localhost:5174';
   if (!process.env.SMTP_SECURE) process.env.SMTP_SECURE = 'false';
   if (!process.env.SMTP_IGNORE_TLS) process.env.SMTP_IGNORE_TLS = 'false';
 
