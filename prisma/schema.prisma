@@ -69,32 +69,51 @@ model Artist {
   albums    Album[]
   label     User?         @relation("LabelArtists", fields: [labelId], references: [id])
   user      User?         @relation(fields: [userId], references: [id])
-  groups    ArtistGroup[] @relation("ArtistGroupMembers")
-  songs     Song[]        @relation("SongArtists")
-  followers User[]        @relation("UserFollowsArtist")
-  videos    Video[]       @relation("VideoArtists")
+  groups           ArtistGroup[]           @relation("ArtistGroupMembers")
+  groupInvitations ArtistGroupInvitation[]
+  songs            Song[]                  @relation("SongArtists")
+  followers        User[]                  @relation("UserFollowsArtist")
+  videos           Video[]                 @relation("VideoArtists")
 }
 
 model ArtistGroup {
-  id        String   @id @default(uuid())
-  name      String
-  imageUrl  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  members   Artist[] @relation("ArtistGroupMembers")
-  songs     Song[]   @relation("SongGroups")
+  id            String                  @id @default(uuid())
+  name          String
+  imageUrl      String?
+  creatorId     String?
+  customMembers String?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  members       Artist[]                @relation("ArtistGroupMembers")
+  invitations   ArtistGroupInvitation[]
+  songs         Song[]                  @relation("SongGroups")
+  albums        Album[]                 @relation("AlbumGroups")
+}
+
+model ArtistGroupInvitation {
+  id        String      @id @default(uuid())
+  groupId   String
+  artistId  String
+  status    String      @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  group     ArtistGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  artist    Artist      @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, artistId])
 }
 
 model Album {
-  id          String   @id @default(uuid())
+  id          String        @id @default(uuid())
   title       String
   year        Int
   coverUrl    String?
   description String?
   artistId    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  artist      Artist?  @relation(fields: [artistId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  artist      Artist?       @relation(fields: [artistId], references: [id])
+  groups      ArtistGroup[] @relation("AlbumGroups")
   songs       Song[]
 }
 

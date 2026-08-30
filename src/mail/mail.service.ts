@@ -206,4 +206,83 @@ export class MailService {
 
     return { skipped: false, recipients };
   }
+
+  async sendGroupInvitationEmail(params: {
+    to: string;
+    artistName: string;
+    groupName: string;
+    inviterName: string;
+    studioUrl?: string;
+  }) {
+    const defaultUrl =
+      this.configService.get<string>('APP_STUDIO_URL') || 'http://localhost:5175';
+    const appUrl = (params.studioUrl || defaultUrl).replace(/\/+$/, '');
+    const groupsLink = `${appUrl}/studio/groups`;
+    const from = this.getFromAddress();
+
+    try {
+      await this.transporter.sendMail({
+        from,
+        to: params.to,
+        subject: `Invitation à rejoindre le groupe « ${params.groupName} » - PyramidPlay Studio`,
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #1e293b; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <div style="margin-bottom: 20px; text-align: center;">
+              <h1 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 0 0 8px 0;">Invitation à un groupe d'artistes</h1>
+              <p style="color: #64748b; font-size: 14px; margin: 0;">Bonjour ${params.artistName},</p>
+            </div>
+            <div style="background-color: #f8fafc; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 20px;">
+              <p style="font-size: 14px; color: #334155; margin: 0 0 16px 0;">
+                <strong>${params.inviterName}</strong> vous invite à rejoindre le groupe d'artistes <strong>« ${params.groupName} »</strong> sur PyramidPlay Studio.
+              </p>
+              <a href="${groupsLink}" style="display: inline-block; background-color: #f59e0b; color: #0b1326; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Voir l'invitation sur mon Studio</a>
+            </div>
+            <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+              <p style="margin: 0;">Vous pourrez accepter ou refuser cette invitation directement depuis votre tableau de bord Play Studio.</p>
+            </div>
+          </div>
+        `,
+      });
+      console.log(`[MailService] Group invitation email sent to ${params.to} for group ${params.groupName}`);
+    } catch (err: any) {
+      console.error(`[MailService] Failed to deliver group invitation to ${params.to}:`, err?.message || err);
+    }
+  }
+
+  async sendGroupInvitationAcceptedEmail(params: {
+    to: string;
+    groupName: string;
+    memberName: string;
+    studioUrl?: string;
+  }) {
+    const defaultUrl =
+      this.configService.get<string>('APP_STUDIO_URL') || 'http://localhost:5175';
+    const appUrl = (params.studioUrl || defaultUrl).replace(/\/+$/, '');
+    const groupsLink = `${appUrl}/studio/groups`;
+    const from = this.getFromAddress();
+
+    try {
+      await this.transporter.sendMail({
+        from,
+        to: params.to,
+        subject: `« ${params.memberName} » a rejoint votre groupe « ${params.groupName} »`,
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #1e293b; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <div style="margin-bottom: 20px; text-align: center;">
+              <h1 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 0 0 8px 0;">Invitation acceptée !</h1>
+            </div>
+            <div style="background-color: #f8fafc; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 20px;">
+              <p style="font-size: 14px; color: #334155; margin: 0 0 16px 0;">
+                Excellente nouvelle ! <strong>${params.memberName}</strong> a accepté votre invitation et fait désormais officiellement partie du groupe <strong>« ${params.groupName} »</strong>.
+              </p>
+              <a href="${groupsLink}" style="display: inline-block; background-color: #10b981; color: #ffffff; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Accéder au groupe</a>
+            </div>
+          </div>
+        `,
+      });
+      console.log(`[MailService] Group accepted email sent to ${params.to}`);
+    } catch (err: any) {
+      console.error(`[MailService] Failed to deliver group accepted email to ${params.to}:`, err?.message || err);
+    }
+  }
 }

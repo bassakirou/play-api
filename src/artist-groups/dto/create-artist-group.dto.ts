@@ -23,4 +23,13 @@ export class CreateArtistGroupDto {
   @IsString()
   @IsOptional()
   imageUrl?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  customMembers?: string | string[];
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  studioUrl?: string;
 }

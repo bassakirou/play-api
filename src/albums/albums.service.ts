@@ -11,16 +11,21 @@ export class AlbumsService {
   ) {}
 
   async create(createAlbumDto: CreateAlbumDto) {
-    const { title, year, coverUrl, description, artistId } = createAlbumDto;
+    const { title, year, coverUrl, description, artistId, artistIds, groupIds } = createAlbumDto as any;
+    const finalArtistId = artistId || (artistIds && artistIds.length ? artistIds[0] : null);
     const data: any = {
       title,
-      year,
+      year: Number(year),
       coverUrl: coverUrl || null,
       description: description || null,
-      ...(artistId ? { artist: { connect: { id: artistId } } } : {}),
+      ...(finalArtistId ? { artist: { connect: { id: finalArtistId } } } : {}),
+      ...(groupIds && groupIds.length
+        ? { groups: { connect: groupIds.map((gid: string) => ({ id: gid })) } }
+        : {}),
     };
     return this.prisma.album.create({
       data,
+      include: { artist: true, groups: true },
     });
   }
 
@@ -40,6 +45,7 @@ export class AlbumsService {
       orderBy: { createdAt: 'desc' },
       include: {
         artist: true,
+        groups: true,
         songs: {
           include: {
             groups: true,
@@ -61,6 +67,7 @@ export class AlbumsService {
       where: { id },
       include: {
         artist: true,
+        groups: true,
         songs: {
           include: {
             groups: true,
