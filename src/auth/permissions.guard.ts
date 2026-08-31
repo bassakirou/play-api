@@ -37,7 +37,7 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    // Récupération de l'utilisateur avec ses rôles système et ses permissions DB
+    // Récupération de l'utilisateur avec ses rôles système, profil artiste et ses permissions DB
     const userWithPerms = await this.prisma.user.findUnique({
       where: { id: user.userId },
       include: {
@@ -46,6 +46,7 @@ export class PermissionsGuard implements CanActivate {
             permissions: true,
           },
         },
+        artistProfile: true,
       },
     });
 
@@ -62,6 +63,13 @@ export class PermissionsGuard implements CanActivate {
       ? userWithPerms.systemRoles.map((r) => r.toUpperCase())
       : [];
 
+    if (userWithPerms.artistProfile && !systemRoles.includes('ARTIST')) {
+      systemRoles.push('ARTIST');
+    }
+    if (userDbRole && !systemRoles.includes(userDbRole)) {
+      systemRoles.push(userDbRole);
+    }
+
     if (systemRoles.includes('ADMIN') || systemRoles.includes('SUPER_ADMIN')) {
       return true;
     }
@@ -70,7 +78,7 @@ export class PermissionsGuard implements CanActivate {
     const grantedPermissions = new Set<string>();
 
     // Rôle ARTIST : singles, albums, artistes, genres
-    if (systemRoles.includes('ARTIST')) {
+    if (systemRoles.includes('ARTIST') || userDbRole === 'ARTIST' || !!userWithPerms.artistProfile) {
       grantedPermissions.add('create:song');
       grantedPermissions.add('update:song');
       grantedPermissions.add('delete:song');

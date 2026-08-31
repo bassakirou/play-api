@@ -91,8 +91,8 @@ export class UsersService {
     return this.prisma.user.count();
   }
 
-  findOne(id: string) {
-    return this.prisma.user.findUnique({
+  async findOne(id: string) {
+    const user = await this.prisma.user.findUnique({
       where: { id },
       include: {
         role: {
@@ -104,10 +104,42 @@ export class UsersService {
         favorites: true,
       },
     });
+
+    if (user) {
+      const currentSys = Array.isArray(user.systemRoles) ? [...user.systemRoles] : [];
+      let changed = false;
+      const roleName = (user.role?.name || '').toUpperCase();
+
+      if (user.artistProfile && !currentSys.includes('ARTIST')) {
+        currentSys.push('ARTIST');
+        changed = true;
+      }
+      if (
+        ['ARTIST', 'AUTHOR', 'CREATOR', 'ADMIN', 'SUPER_ADMIN'].includes(roleName) &&
+        !currentSys.includes(roleName)
+      ) {
+        currentSys.push(roleName);
+        changed = true;
+      }
+
+      if (changed) {
+        try {
+          await this.prisma.user.update({
+            where: { id: user.id },
+            data: { systemRoles: currentSys },
+          });
+          user.systemRoles = currentSys;
+        } catch {
+          // ignore background sync error
+        }
+      }
+    }
+
+    return user;
   }
 
-  findByEmail(email: string) {
-    return this.prisma.user.findUnique({
+  async findByEmail(email: string) {
+    const user = await this.prisma.user.findUnique({
       where: { email },
       include: {
         role: {
@@ -118,6 +150,38 @@ export class UsersService {
         artistProfile: true,
       },
     });
+
+    if (user) {
+      const currentSys = Array.isArray(user.systemRoles) ? [...user.systemRoles] : [];
+      let changed = false;
+      const roleName = (user.role?.name || '').toUpperCase();
+
+      if (user.artistProfile && !currentSys.includes('ARTIST')) {
+        currentSys.push('ARTIST');
+        changed = true;
+      }
+      if (
+        ['ARTIST', 'AUTHOR', 'CREATOR', 'ADMIN', 'SUPER_ADMIN'].includes(roleName) &&
+        !currentSys.includes(roleName)
+      ) {
+        currentSys.push(roleName);
+        changed = true;
+      }
+
+      if (changed) {
+        try {
+          await this.prisma.user.update({
+            where: { id: user.id },
+            data: { systemRoles: currentSys },
+          });
+          user.systemRoles = currentSys;
+        } catch {
+          // ignore background sync error
+        }
+      }
+    }
+
+    return user;
   }
 
   findByResetToken(token: string) {
@@ -167,6 +231,25 @@ export class UsersService {
       }
     }
 
+    if (sanitizedData.systemRoles !== undefined && Array.isArray(sanitizedData.systemRoles)) {
+      let cleanRoles = Array.from(
+        new Set(
+          sanitizedData.systemRoles
+            .filter((r: any) => typeof r === 'string' && r.trim().length > 0)
+            .map((r: string) => r.trim().toUpperCase()),
+        ),
+      );
+      const existingUser = await this.prisma.user.findUnique({
+        where: { id },
+        select: { systemRoles: true },
+      });
+      const hadSuperAdmin = existingUser?.systemRoles?.includes('SUPER_ADMIN');
+      if (!hadSuperAdmin) {
+        cleanRoles = cleanRoles.filter((r) => r !== 'SUPER_ADMIN');
+      }
+      sanitizedData.systemRoles = cleanRoles;
+    }
+
     const updated = await this.prisma.user.update({
       where: { id },
       data: sanitizedData,
@@ -214,7 +297,15 @@ export class UsersService {
   }
 
   async updateSystemRoles(id: string, roles: string[], isSuperAdmin = false) {
-    let validRoles = Array.isArray(roles) ? roles.map((r) => r.toUpperCase()) : [];
+    let validRoles = Array.isArray(roles)
+      ? Array.from(
+          new Set(
+            roles
+              .filter((r: any) => typeof r === 'string' && r.trim().length > 0)
+              .map((r) => r.trim().toUpperCase()),
+          ),
+        )
+      : [];
     if (!isSuperAdmin) {
       // Un utilisateur normal ne peut pas s'auto-attribuer SUPER_ADMIN
       const user = await this.prisma.user.findUnique({ where: { id } });
