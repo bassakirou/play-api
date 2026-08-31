@@ -20,10 +20,11 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class ArtistGroupsController {
   constructor(private readonly artistGroupsService: ArtistGroupsService) {}
 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Post()
   create(@Body() dto: CreateArtistGroupDto, @Req() req: any) {
-    const user = req.user || null;
-    return this.artistGroupsService.create(dto, user);
+    return this.artistGroupsService.create(dto, req.user);
   }
 
   @Get()
@@ -59,6 +60,8 @@ export class ArtistGroupsController {
     return this.artistGroupsService.findOne(id);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -68,8 +71,10 @@ export class ArtistGroupsController {
     return this.artistGroupsService.update(id, dto, req.user);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.artistGroupsService.remove(id);
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.artistGroupsService.remove(id, req.user);
   }
 }

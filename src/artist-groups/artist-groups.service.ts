@@ -36,6 +36,8 @@ export class ArtistGroupsService {
     }
 
     // Récupérer les informations des artistes sélectionnés
+    const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+
     if (requestedMemberIds.length > 0) {
       const selectedArtists = await this.prisma.artist.findMany({
         where: { id: { in: requestedMemberIds } },
@@ -45,8 +47,10 @@ export class ArtistGroupsService {
       for (const artist of selectedArtists) {
         if (creatorArtist && artist.id === creatorArtist.id) {
           directConnectArtistIds.add(artist.id);
-        } else if (!artist.userId || !artist.user) {
-          // Artiste catalogue sans compte utilisateur -> membre direct
+        } else if (creatorUserId && artist.userId === creatorUserId) {
+          directConnectArtistIds.add(artist.id);
+        } else if (isAdmin || !artist.userId || !artist.user) {
+          // Admin ou Artiste catalogue sans compte utilisateur -> membre direct
           directConnectArtistIds.add(artist.id);
         } else {
           // Artiste avec compte utilisateur enregistré -> invitation requise
@@ -314,7 +318,17 @@ export class ArtistGroupsService {
     return this.findOne(id);
   }
 
-  async remove(id: string) {
+  async remove(id: string, user?: any) {
+    const existing = await this.prisma.artistGroup.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException('Groupe d’artistes introuvable');
+    }
+    const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+    const userId = user?.userId || user?.id;
+    if (!isAdmin && existing.creatorId && userId && existing.creatorId !== userId) {
+      throw new ForbiddenException('Vous n’avez pas le droit de supprimer ce groupe');
+    }
+    await this.prisma.artistGroupInvitation.deleteMany({ where: { groupId: id } });
     return this.prisma.artistGroup.delete({ where: { id } });
   }
 
