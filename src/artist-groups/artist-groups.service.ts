@@ -129,8 +129,8 @@ export class ArtistGroupsService {
         ? {
             OR: [
               { creatorId },
-              { members: { some: { user: { id: creatorId } } } },
-              { invitations: { some: { artist: { user: { id: creatorId } } } } },
+              { members: { some: { OR: [{ userId: creatorId }, { id: creatorId }] } } },
+              { invitations: { some: { artist: { OR: [{ userId: creatorId }, { id: creatorId }] } } } },
             ],
           }
         : undefined,
