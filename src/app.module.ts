@@ -24,8 +24,9 @@ import { MigrationModule } from './migration/migration.module';
 import { StatsModule } from './stats/stats.module';
 import { AudiobooksModule } from './audiobooks/audiobooks.module';
 import { MediaModule } from './media/media.module';
-
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
+import { LivesModule } from './lives/lives.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ConfigModule } from '@nestjs/config';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     StorageModule,
     AuthModule,
@@ -54,6 +56,7 @@ import { ConfigModule } from '@nestjs/config';
     StatsModule,
     AudiobooksModule,
     MediaModule,
+    LivesModule,
   ],
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],

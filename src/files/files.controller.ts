@@ -31,6 +31,105 @@ async function streamToString(stream: any): Promise<string> {
   });
 }
 
+function getImageDimensions(buffer: Buffer): { width: number; height: number } | null {
+  if (!buffer || buffer.length < 24) return null;
+
+  // 1. PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return {
+      width: buffer.readUInt32BE(16),
+      height: buffer.readUInt32BE(20),
+    };
+  }
+
+  // 2. GIF: 'GIF87a' or 'GIF89a'
+  if (
+    buffer[0] === 0x47 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46
+  ) {
+    return {
+      width: buffer.readUInt16LE(6),
+      height: buffer.readUInt16LE(8),
+    };
+  }
+
+  // 3. WebP: 'RIFF' .... 'WEBP'
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    // VP8 lossy
+    if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38 && buffer[15] === 0x20) {
+      return {
+        width: buffer.readUInt16LE(26) & 0x3fff,
+        height: buffer.readUInt16LE(28) & 0x3fff,
+      };
+    }
+    // VP8X extended
+    if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38 && buffer[15] === 0x58) {
+      return {
+        width: 1 + buffer.readUIntLE(24, 3),
+        height: 1 + buffer.readUIntLE(27, 3),
+      };
+    }
+    // VP8L lossless
+    if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38 && buffer[15] === 0x4c) {
+      if (buffer[20] === 0x2f) {
+        const b1 = buffer[21];
+        const b2 = buffer[22];
+        const b3 = buffer[23];
+        const b4 = buffer[24];
+        const width = 1 + (((b2 & 0x3f) << 8) | b1);
+        const height = 1 + (((b4 & 0x0f) << 10) | (b3 << 2) | ((b2 & 0xc0) >> 6));
+        return { width, height };
+      }
+    }
+  }
+
+  // 4. JPEG: 0xFF, 0xD8
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset < buffer.length - 8) {
+      if (buffer[offset] !== 0xff) {
+        offset++;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      if (
+        (marker >= 0xc0 && marker <= 0xc3) ||
+        (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) ||
+        (marker >= 0xcd && marker <= 0xcf)
+      ) {
+        return {
+          height: buffer.readUInt16BE(offset + 5),
+          width: buffer.readUInt16BE(offset + 7),
+        };
+      }
+      if (offset + 3 < buffer.length) {
+        const length = buffer.readUInt16BE(offset + 2);
+        offset += 2 + length;
+      } else {
+        break;
+      }
+    }
+  }
+
+  return null;
+}
+
 function ensureDir(path: string) {
   try {
     if (!existsSync(path)) {
@@ -301,6 +400,37 @@ export class FilesController {
   })
   async uploadImage(@UploadedFile() file?: Express.Multer.File, @Req() req?: any) {
     if (!file) return { error: 'No file' };
+
+    // 1. Validation du format d'extension (WebP, JPG, JPEG, PNG)
+    const extRaw = extname(file.originalname).toLowerCase().replace('.', '');
+    const allowedExtensions = ['webp', 'jpg', 'jpeg', 'png'];
+    if (!allowedExtensions.includes(extRaw)) {
+      throw new BadRequestException(
+        `Format d'image non supporté (.${extRaw || 'inconnu'}). Les formats autorisés sont : ${allowedExtensions.map((e) => `.${e.toUpperCase()}`).join(', ')}.`,
+      );
+    }
+
+    // 2. Validation de la taille maximale (500 Ko)
+    const MAX_IMAGE_SIZE = 500 * 1024; // 500 Ko
+    const fileSize = file.size || (file.buffer ? file.buffer.length : 0);
+    if (fileSize > MAX_IMAGE_SIZE) {
+      throw new BadRequestException(
+        `L'image dépasse la taille maximale autorisée de 500 Ko (${(fileSize / 1024).toFixed(1)} Ko reçus). Veuillez optimiser ou compresser votre image.`,
+      );
+    }
+
+    // 2. Validation des dimensions minimales (Min 300x300 px)
+    if (file.buffer) {
+      const dimensions = getImageDimensions(file.buffer);
+      if (dimensions) {
+        const MIN_DIMENSION = 300;
+        if (dimensions.width < MIN_DIMENSION || dimensions.height < MIN_DIMENSION) {
+          throw new BadRequestException(
+            `Les dimensions de l'image (${dimensions.width}×${dimensions.height} px) sont inférieures au minimum requis de ${MIN_DIMENSION}×${MIN_DIMENSION} px.`,
+          );
+        }
+      }
+    }
 
     const uniqueName = `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
     const isProduction =

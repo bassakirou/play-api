@@ -32,6 +32,8 @@ model User {
   videos           Video[]
   audiobooks       Audiobook[]     @relation("UserAudiobooks")
   mediaAssets      MediaAsset[]
+  lives            LiveStream[]    @relation("UserLives")
+  liveComments     LiveComment[]
 }
 
 model Role {
@@ -262,5 +264,59 @@ model MediaAsset {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model LiveStream {
+  id            String         @id @default(uuid())
+  title         String
+  description   String?
+  type          String         @default("video") // "video" | "radio"
+  category      String         @default("all")   // "concerts" | "talk" | "radio" | "video" | "music"
+  status        String         @default("LIVE")  // "SCHEDULED" | "LIVE" | "ENDED"
+  streamKey     String         @unique @default(uuid())
+  streamUrl     String?
+  playbackType  String         @default("WEBRTC") // "WEBRTC" | "HLS" | "AUDIO_STREAM" | "EXTERNAL"
+  thumbnailUrl  String?
+  coverUrl      String?
+  tags          String[]       @default([])
+  viewerCount   Int            @default(0)
+  peakViewers   Int            @default(0)
+  likesCount    Int            @default(0)
+  isFeatured    Boolean        @default(false)
+  startedAt     DateTime?      @default(now())
+  endedAt       DateTime?
+  retentionDays Int            @default(3) // 0 = delete immediately, 1-7 days retention
+  recordingUrl  String?
+  isRecorded    Boolean        @default(false)
+  cleanupAt     DateTime?
+  isCleanedUp   Boolean        @default(false)
+  userId        String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User?          @relation("UserLives", fields: [userId], references: [id], onDelete: SetNull)
+  comments      LiveComment[]
+  reactions     LiveReaction[]
+}
+
+model LiveComment {
+  id         String     @id @default(uuid())
+  liveId     String
+  userId     String?
+  userName   String
+  userAvatar String?
+  role       String?    // "HOST" | "ADMIN" | "VIP" | "USER"
+  text       String
+  createdAt  DateTime   @default(now())
+  live       LiveStream @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model LiveReaction {
+  id        String     @id @default(uuid())
+  liveId    String
+  emoji     String     // e.g. "❤️", "🔥", "👏", "🤩", "🎉", "💯"
+  count     Int        @default(1)
+  createdAt DateTime   @default(now())
+  live      LiveStream @relation(fields: [liveId], references: [id], onDelete: Cascade)
 }
 
