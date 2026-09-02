@@ -211,10 +211,14 @@ export class FilesController {
             } else {
               res.setHeader('Content-Type', 'image/jpeg');
             }
-            if (stat?.size) {
-              res.setHeader('Content-Length', stat.size);
+            if (stat?.etag) {
+              res.setHeader('ETag', stat.etag);
+              if (req.headers['if-none-match'] === stat.etag) {
+                res.status(304).end();
+                return;
+              }
             }
-            res.setHeader('Cache-Control', 'public, max-age=86400');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
             res.status(200);
             stream.pipe(res);
             return;
@@ -232,7 +236,7 @@ export class FilesController {
           if (diskPath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
           else if (diskPath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
           else res.setHeader('Content-Type', 'image/jpeg');
-          res.setHeader('Cache-Control', 'public, max-age=86400');
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
           res.status(200);
           createReadStream(diskPath).pipe(res);
           return;
@@ -410,12 +414,12 @@ export class FilesController {
       );
     }
 
-    // 2. Validation de la taille maximale (500 Ko)
-    const MAX_IMAGE_SIZE = 500 * 1024; // 500 Ko
+    // 2. Validation de la taille maximale (300 Ko)
+    const MAX_IMAGE_SIZE = 300 * 1024; // 300 Ko
     const fileSize = file.size || (file.buffer ? file.buffer.length : 0);
     if (fileSize > MAX_IMAGE_SIZE) {
       throw new BadRequestException(
-        `L'image dépasse la taille maximale autorisée de 500 Ko (${(fileSize / 1024).toFixed(1)} Ko reçus). Veuillez optimiser ou compresser votre image.`,
+        `L'image dépasse la taille maximale autorisée de 300 Ko (${(fileSize / 1024).toFixed(1)} Ko reçus). Veuillez optimiser ou compresser votre image.`,
       );
     }
 

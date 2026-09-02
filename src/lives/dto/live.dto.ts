@@ -44,6 +44,13 @@ export class CreateLiveDto {
   retentionDays?: number;
 
   @IsOptional()
+  @IsEnum(['SCHEDULED', 'LIVE', 'ENDED'])
+  status?: 'SCHEDULED' | 'LIVE' | 'ENDED';
+
+  @IsOptional()
+  scheduledAt?: string | Date;
+
+  @IsOptional()
   @IsBoolean()
   isFeatured?: boolean;
 }
@@ -56,6 +63,9 @@ export class UpdateLiveDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  scheduledAt?: string | Date;
 
   @IsOptional()
   @IsEnum(['video', 'radio'])

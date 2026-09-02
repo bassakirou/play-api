@@ -283,6 +283,7 @@ model LiveStream {
   peakViewers   Int            @default(0)
   likesCount    Int            @default(0)
   isFeatured    Boolean        @default(false)
+  scheduledAt   DateTime?
   startedAt     DateTime?      @default(now())
   endedAt       DateTime?
   retentionDays Int            @default(3) // 0 = delete immediately, 1-7 days retention

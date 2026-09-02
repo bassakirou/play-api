@@ -145,16 +145,27 @@ export class LivesService {
     const roleName = (user.role?.name || '').toUpperCase();
     const isCreator =
       systemRoles.includes('CREATOR') ||
+      systemRoles.includes('CREATEUR') ||
       systemRoles.includes('ADMIN') ||
       systemRoles.includes('SUPER_ADMIN') ||
+      systemRoles.includes('ARTIST') ||
+      roleName === 'CREATOR' ||
+      roleName === 'CREATEUR' ||
       roleName === 'ADMIN' ||
-      roleName === 'SUPER_ADMIN';
+      roleName === 'SUPER_ADMIN' ||
+      roleName === 'ARTIST' ||
+      !!user.artistProfile;
 
     if (!isCreator) {
       throw new ForbiddenException(
-        'Accès refusé : Seuls les utilisateurs avec le rôle CREATOR peuvent démarrer un Live.',
+        'Accès refusé : Seuls les utilisateurs avec le rôle système CREATOR, ARTIST ou ADMIN peuvent créer un Live.',
       );
     }
+
+    const isScheduled = dto.status === 'SCHEDULED' || !!dto.scheduledAt;
+    const initialStatus = isScheduled ? 'SCHEDULED' : (dto.status || 'LIVE');
+    const scheduledDate = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
+    const startedDate = isScheduled ? null : new Date();
 
     const retentionDays = dto.retentionDays !== undefined ? dto.retentionDays : 3;
     const cleanupAt =
@@ -174,7 +185,9 @@ export class LivesService {
         description: dto.description?.trim() || null,
         type: dto.type || 'video',
         category: dto.category || 'all',
-        status: 'LIVE',
+        status: initialStatus,
+        scheduledAt: scheduledDate,
+        startedAt: startedDate,
         streamUrl: dto.streamUrl || null,
         playbackType: dto.playbackType || 'WEBRTC',
         thumbnailUrl: dto.thumbnailUrl || defaultThumb,
@@ -184,7 +197,6 @@ export class LivesService {
         cleanupAt,
         isFeatured: dto.isFeatured || false,
         userId: user.id,
-        startedAt: new Date(),
       },
       include: {
         user: {
@@ -197,7 +209,7 @@ export class LivesService {
       },
     });
 
-    this.logger.log(`[LivesService] Nouveau live démarré: ${created.id} par ${hostName}`);
+    this.logger.log(`[LivesService] Nouveau live ${initialStatus}: ${created.id} par ${hostName}`);
     return this.formatLiveItem(created);
   }
 
@@ -453,6 +465,7 @@ export class LivesService {
       peakViewers: live.peakViewers || 0,
       likesCount: live.likesCount || 0,
       isFeatured: live.isFeatured || false,
+      scheduledAt: live.scheduledAt,
       startedAt: live.startedAt || live.createdAt,
       endedAt: live.endedAt,
       retentionDays: live.retentionDays,
