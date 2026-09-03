@@ -8,7 +8,7 @@ import { randomBytes } from 'crypto';
 
 const execAsync = promisify(exec);
 
-export type QualityTier = '1080p' | '720p' | '480p' | '360p';
+export type QualityTier = '1080p' | '720p' | '480p' | '360p' | '240p' | '144p';
 
 export interface VideoAnalysisResult {
   width: number;
@@ -77,6 +77,28 @@ export const QUALITY_PRESETS: Record<QualityTier, QualityVariantConfig> = {
     audioBitrate: '64k',
     bandwidth: 700000,
   },
+  '240p': {
+    quality: '240p',
+    label: 'Très basse (240p)',
+    width: 426,
+    height: 240,
+    videoBitrate: '300k',
+    maxRate: '350k',
+    bufSize: '600k',
+    audioBitrate: '48k',
+    bandwidth: 350000,
+  },
+  '144p': {
+    quality: '144p',
+    label: 'Ultra basse / Réseau faible (144p)',
+    width: 256,
+    height: 144,
+    videoBitrate: '150k',
+    maxRate: '180k',
+    bufSize: '300k',
+    audioBitrate: '32k',
+    bandwidth: 180000,
+  },
 };
 
 function formatSeconds(totalSeconds: number): string {
@@ -107,22 +129,30 @@ export class HlsTranscoderService {
       const height = Number(stream.height) || 720;
       const duration = Math.round(Number(stream.duration || format.duration || 0));
 
-      let maxQuality: QualityTier = '360p';
-      let maxQualityLabel = '360P';
-      const allowedQualities: QualityTier[] = ['360p'];
+      let maxQuality: QualityTier = '144p';
+      let maxQualityLabel = '144P';
+      const allowedQualities: QualityTier[] = ['144p'];
 
       if (height >= 1080 || width >= 1920) {
         maxQuality = '1080p';
         maxQualityLabel = '1080P';
-        allowedQualities.unshift('480p', '720p', '1080p');
+        allowedQualities.unshift('240p', '360p', '480p', '720p', '1080p');
       } else if (height >= 720 || width >= 1280) {
         maxQuality = '720p';
         maxQualityLabel = '720P';
-        allowedQualities.unshift('480p', '720p');
+        allowedQualities.unshift('240p', '360p', '480p', '720p');
       } else if (height >= 480 || width >= 854) {
         maxQuality = '480p';
         maxQualityLabel = '480P';
-        allowedQualities.unshift('480p');
+        allowedQualities.unshift('240p', '360p', '480p');
+      } else if (height >= 360 || width >= 640) {
+        maxQuality = '360p';
+        maxQualityLabel = '360P';
+        allowedQualities.unshift('240p', '360p');
+      } else if (height >= 240 || width >= 426) {
+        maxQuality = '240p';
+        maxQualityLabel = '240P';
+        allowedQualities.unshift('240p');
       }
 
       return {
@@ -143,7 +173,7 @@ export class HlsTranscoderService {
         formattedDuration: '00:00',
         maxQuality: '720p',
         maxQualityLabel: '720P',
-        allowedQualities: ['1080p', '720p', '480p', '360p'],
+        allowedQualities: ['1080p', '720p', '480p', '360p', '240p', '144p'],
       };
     }
   }
@@ -295,12 +325,12 @@ export class HlsTranscoderService {
     // Filter requested qualities so we NEVER upscale above the source resolution
     const requested = opts.targetQualities && opts.targetQualities.length > 0
       ? opts.targetQualities
-      : (['1080p', '720p', '480p', '360p'] as QualityTier[]);
+      : (['1080p', '720p', '480p', '360p', '240p', '144p'] as QualityTier[]);
 
     const validQualities = requested.filter((q) => analysis.allowedQualities.includes(q));
 
     if (validQualities.length === 0) {
-      validQualities.push('360p');
+      validQualities.push('144p');
     }
 
     this.logger.log(`Generating ${validQualities.length} HLS quality tiers for media ${mediaId}: ${validQualities.join(', ')}`);
@@ -486,12 +516,12 @@ export class HlsTranscoderService {
               if (h > maxHeight) maxHeight = h;
             }
             const nameMatch = line.match(/NAME="([^"]+)"/);
-            if (nameMatch && (['1080p', '720p', '480p', '360p'] as string[]).includes(nameMatch[1])) {
+            if (nameMatch && (['1080p', '720p', '480p', '360p', '240p', '144p'] as string[]).includes(nameMatch[1])) {
               foundQualities.push(nameMatch[1] as QualityTier);
             }
           } else if (line.endsWith('index.m3u8')) {
             const q = line.replace(/\/index\.m3u8$/, '').trim() as QualityTier;
-            if ((['1080p', '720p', '480p', '360p'] as QualityTier[]).includes(q) && !foundQualities.includes(q)) {
+            if ((['1080p', '720p', '480p', '360p', '240p', '144p'] as QualityTier[]).includes(q) && !foundQualities.includes(q)) {
               foundQualities.push(q);
             }
           }
@@ -500,7 +530,7 @@ export class HlsTranscoderService {
 
       // If we couldn't parse specific qualities from masterContent, default to matching known presets
       if (foundQualities.length === 0) {
-        foundQualities.push('720p', '480p', '360p');
+        foundQualities.push('720p', '480p', '360p', '240p', '144p');
         maxWidth = 1280;
         maxHeight = 720;
       }
@@ -516,13 +546,17 @@ export class HlsTranscoderService {
       if (maxHeight >= 1080 || foundQualities.includes('1080p')) maxQuality = '1080p';
       else if (maxHeight >= 720 || foundQualities.includes('720p')) maxQuality = '720p';
       else if (maxHeight >= 480 || foundQualities.includes('480p')) maxQuality = '480p';
-      else maxQuality = '360p';
+      else if (maxHeight >= 360 || foundQualities.includes('360p')) maxQuality = '360p';
+      else if (maxHeight >= 240 || foundQualities.includes('240p')) maxQuality = '240p';
+      else maxQuality = '144p';
 
       const allowedQualities: QualityTier[] = [];
-      if (maxQuality === '1080p') allowedQualities.push('1080p', '720p', '480p', '360p');
-      else if (maxQuality === '720p') allowedQualities.push('720p', '480p', '360p');
-      else if (maxQuality === '480p') allowedQualities.push('480p', '360p');
-      else allowedQualities.push('360p');
+      if (maxQuality === '1080p') allowedQualities.push('1080p', '720p', '480p', '360p', '240p', '144p');
+      else if (maxQuality === '720p') allowedQualities.push('720p', '480p', '360p', '240p', '144p');
+      else if (maxQuality === '480p') allowedQualities.push('480p', '360p', '240p', '144p');
+      else if (maxQuality === '360p') allowedQualities.push('360p', '240p', '144p');
+      else if (maxQuality === '240p') allowedQualities.push('240p', '144p');
+      else allowedQualities.push('144p');
 
       return {
         masterUrl,
@@ -550,7 +584,7 @@ export class HlsTranscoderService {
         formattedDuration: '00:00',
         maxQuality: '720p',
         maxQualityLabel: '720P',
-        allowedQualities: ['720p', '480p', '360p'],
+        allowedQualities: ['1080p', '720p', '480p', '360p', '240p', '144p'],
       },
     };
   }
