@@ -130,6 +130,151 @@ function getImageDimensions(buffer: Buffer): { width: number; height: number } |
   return null;
 }
 
+function getAudioDuration(buffer: Buffer): number {
+  if (!buffer || buffer.length < 16) return 0;
+  try {
+    const len = buffer.length;
+
+    // 1. WAV format ('RIFF' ... 'WAVE')
+    if (
+      len >= 44 &&
+      buffer.readUInt32BE(0) === 0x52494646 &&
+      buffer.readUInt32BE(8) === 0x57415645
+    ) {
+      let pos = 12;
+      let byteRate = 0;
+      let dataSize = 0;
+      while (pos + 8 <= len) {
+        const chunkId = buffer.toString('ascii', pos, pos + 4);
+        const chunkSize = buffer.readUInt32LE(pos + 4);
+        if (chunkId === 'fmt ' && chunkSize >= 16) {
+          byteRate = buffer.readUInt32LE(pos + 16);
+        } else if (chunkId === 'data') {
+          dataSize = chunkSize;
+          break;
+        }
+        pos += 8 + chunkSize;
+      }
+      if (byteRate > 0 && dataSize > 0) {
+        return Math.round(dataSize / byteRate);
+      }
+    }
+
+    // 2. FLAC format ('fLaC')
+    if (len >= 42 && buffer.readUInt32BE(0) === 0x664c6143) {
+      const sampleRate =
+        (buffer[18] << 12) |
+        (buffer[19] << 4) |
+        (buffer[20] >> 4);
+      const totalSamples =
+        ((buffer[21] & 0x0f) * 0x100000000) +
+        (buffer[22] * 0x1000000) +
+        (buffer[23] * 0x10000) +
+        (buffer[24] * 0x100) +
+        buffer[25];
+      if (sampleRate > 0 && totalSamples > 0) {
+        return Math.round(totalSamples / sampleRate);
+      }
+    }
+
+    // 3. M4A / MP4 / AAC format (ISO BMFF boxes)
+    function readIsoBoxes(start: number, end: number): number {
+      let pos = start;
+      while (pos + 8 <= end) {
+        const size = buffer.readUInt32BE(pos);
+        const type = buffer.toString('ascii', pos + 4, pos + 8);
+        let boxSize = size;
+        let headerSize = 8;
+        if (size === 1 && pos + 16 <= end) {
+          boxSize = Number(buffer.readBigUInt64BE(pos + 8));
+          headerSize = 16;
+        } else if (size === 0) {
+          boxSize = end - pos;
+        }
+        if (boxSize <= 0 || pos + boxSize > end + 1000) {
+          boxSize = end - pos;
+        }
+        if (type === 'moov' || type === 'trak' || type === 'mdia') {
+          const res = readIsoBoxes(pos + headerSize, Math.min(end, pos + boxSize));
+          if (res > 0) return res;
+        } else if (type === 'mvhd' || type === 'mdhd') {
+          if (pos + headerSize + 28 <= end) {
+            const version = buffer[pos + headerSize];
+            let timescale = 0;
+            let duration = 0;
+            if (version === 1) {
+              timescale = buffer.readUInt32BE(pos + headerSize + 20);
+              duration = Number(buffer.readBigUInt64BE(pos + headerSize + 24));
+            } else {
+              timescale = buffer.readUInt32BE(pos + headerSize + 12);
+              duration = buffer.readUInt32BE(pos + headerSize + 16);
+            }
+            if (timescale > 0 && duration > 0) {
+              const durSec = duration / timescale;
+              if (isFinite(durSec) && durSec > 0) {
+                return Math.round(durSec);
+              }
+            }
+          }
+        }
+        pos += boxSize;
+      }
+      return 0;
+    }
+
+    const m4aDur = readIsoBoxes(0, len);
+    if (m4aDur > 0) return m4aDur;
+
+    // 4. MP3 format
+    let mp3Offset = 0;
+    if (len >= 10 && buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) {
+      const id3Size =
+        ((buffer[6] & 0x7f) << 21) |
+        ((buffer[7] & 0x7f) << 14) |
+        ((buffer[8] & 0x7f) << 7) |
+        (buffer[9] & 0x7f);
+      mp3Offset = 10 + id3Size;
+    }
+
+    for (let i = mp3Offset; i < Math.min(len - 4, mp3Offset + 8192); i++) {
+      if (buffer[i] === 0xff && (buffer[i + 1] & 0xe0) === 0xe0) {
+        const header = buffer.readUInt32BE(i);
+        const sampleRateIdx = (header >> 10) & 0x03;
+        const bitrateIdx = (header >> 12) & 0x0f;
+        const channelMode = (header >> 6) & 0x03;
+
+        const sampleRates = [44100, 48000, 32000, 0];
+        const bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
+
+        const sampleRate = sampleRates[sampleRateIdx];
+        const bitrateKbps = bitrates[bitrateIdx];
+
+        if (sampleRate > 0 && bitrateKbps > 0) {
+          const xingOffset = i + (channelMode === 3 ? 17 : 32) + 4;
+          if (xingOffset + 8 <= len) {
+            const tag = buffer.toString('ascii', xingOffset, xingOffset + 4);
+            if (tag === 'Xing' || tag === 'Info') {
+              const flags = buffer.readUInt32BE(xingOffset + 4);
+              if (flags & 0x0001 && xingOffset + 12 <= len) {
+                const totalFrames = buffer.readUInt32BE(xingOffset + 8);
+                const dur = (totalFrames * 1152) / sampleRate;
+                if (dur > 0) return Math.round(dur);
+              }
+            }
+          }
+          const audioBytes = len - mp3Offset;
+          if (audioBytes > 0) {
+            const estimatedDur = (audioBytes * 8) / (bitrateKbps * 1000);
+            if (estimatedDur > 0) return Math.round(estimatedDur);
+          }
+        }
+        break;
+      }
+    }
+  } catch {}
+  return 0;
+}
+
 function ensureDir(path: string) {
   try {
     if (!existsSync(path)) {
@@ -374,6 +519,10 @@ export class FilesController {
     const userId = req?.body?.userId || req?.user?.id || req?.user?.sub || req?.user?.userId;
     const ext = extname(file.originalname).toLowerCase().replace('.', '');
     const title = file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+    const calculatedDuration = fileBuffer ? getAudioDuration(fileBuffer) : 0;
+    const effectiveDuration = req?.body?.duration && Number(req.body.duration) > 0
+      ? Number(req.body.duration)
+      : calculatedDuration;
 
     try {
       await this.mediaService.create({
@@ -383,7 +532,7 @@ export class FilesController {
         type: 'audio',
         mimeType: file.mimetype || 'audio/mpeg',
         size: file.size || (fileBuffer ? fileBuffer.length : 0),
-        duration: req?.body?.duration ? Number(req.body.duration) : 0,
+        duration: effectiveDuration,
         format: ext.toUpperCase(),
       }, userId);
     } catch (e: any) {
@@ -392,7 +541,7 @@ export class FilesController {
 
     return {
       url: finalUrl,
-      duration: req?.body?.duration ? Number(req.body.duration) : 0,
+      duration: effectiveDuration,
     };
   }
 
