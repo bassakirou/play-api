@@ -390,7 +390,10 @@ export class FilesController {
       console.warn(`[FilesController] Failed to auto-register audio MediaAsset: ${e.message}`);
     }
 
-    return { url: finalUrl };
+    return {
+      url: finalUrl,
+      duration: req?.body?.duration ? Number(req.body.duration) : 0,
+    };
   }
 
   @Post('upload-image')
