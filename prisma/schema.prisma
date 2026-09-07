@@ -34,6 +34,8 @@ model User {
   mediaAssets      MediaAsset[]
   lives            LiveStream[]    @relation("UserLives")
   liveComments     LiveComment[]
+  instructedCourses AcademicCourse[] @relation("InstructorCourses")
+  enrollments       CourseEnrollment[]
 }
 
 model Role {
