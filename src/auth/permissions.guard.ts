@@ -121,6 +121,26 @@ export class PermissionsGuard implements CanActivate {
       grantedPermissions.add('upload:file');
     }
 
+    // Rôle ACADEMIC : formations, cours, modules, leçons, ressources
+    if (
+      systemRoles.includes('ACADEMIC') ||
+      systemRoles.includes('FORMATEUR') ||
+      systemRoles.includes('ENSEIGNANT')
+    ) {
+      grantedPermissions.add('create:course');
+      grantedPermissions.add('update:course');
+      grantedPermissions.add('delete:course');
+      grantedPermissions.add('read:course');
+      grantedPermissions.add('create:module');
+      grantedPermissions.add('update:module');
+      grantedPermissions.add('delete:module');
+      grantedPermissions.add('create:lesson');
+      grantedPermissions.add('update:lesson');
+      grantedPermissions.add('delete:lesson');
+      grantedPermissions.add('read:lesson');
+      grantedPermissions.add('upload:file');
+    }
+
     // Permissions explicites attachées au rôle SQL
     if (userWithPerms.role?.permissions) {
       for (const p of userWithPerms.role.permissions) {

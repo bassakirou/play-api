@@ -323,3 +323,77 @@ model LiveReaction {
   live      LiveStream @relation(fields: [liveId], references: [id], onDelete: Cascade)
 }
 
+model AcademicCourse {
+  id               String             @id @default(uuid())
+  title            String
+  subtitle         String?
+  description      String?            @db.Text
+  thumbnailUrl     String?
+  previewVideoUrl  String?
+  category         String             @default("Général") // "Tech & Code", "Business & Finance", "Langues & Cultures", etc.
+  level            String             @default("ALL_LEVELS") // "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "ALL_LEVELS"
+  language         String             @default("Français")
+  durationHours    Float              @default(0)
+  rating           Float              @default(5.0)
+  totalReviews     Int                @default(0)
+  studentsCount    Int                @default(0)
+  isPublished      Boolean            @default(true)
+  isFeatured       Boolean            @default(false)
+  isBestseller     Boolean            @default(false)
+  learningOutcomes String[]           @default([])
+  requirements     String[]           @default([])
+  instructorId     String?
+  instructorBio    String?            @db.Text
+  instructorTitle  String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  instructor       User?              @relation("InstructorCourses", fields: [instructorId], references: [id], onDelete: SetNull)
+  modules          AcademicModule[]
+  enrollments      CourseEnrollment[]
+}
+
+model AcademicModule {
+  id        String           @id @default(uuid())
+  courseId  String
+  title     String
+  order     Int              @default(0)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  course    AcademicCourse   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons   AcademicLesson[]
+}
+
+model AcademicLesson {
+  id              String         @id @default(uuid())
+  moduleId        String
+  title           String
+  description     String?        @db.Text
+  contentType     String         @default("VIDEO") // "VIDEO" | "AUDIO" | "ARTICLE"
+  contentUrl      String?
+  durationSeconds Int            @default(0)
+  order           Int            @default(0)
+  isFreePreview   Boolean        @default(false)
+  resources       Json?
+  notes           String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  module          AcademicModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+}
+
+model CourseEnrollment {
+  id               String         @id @default(uuid())
+  userId           String
+  courseId         String
+  progressPercent  Int            @default(0)
+  completedLessons String[]       @default([])
+  currentLessonId  String?
+  isCompleted      Boolean        @default(false)
+  enrolledAt       DateTime       @default(now())
+  completedAt      DateTime?
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course           AcademicCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+

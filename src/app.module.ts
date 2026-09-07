@@ -27,6 +27,7 @@ import { MediaModule } from './media/media.module';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LivesModule } from './lives/lives.module';
+import { AcademicModule } from './academic/academic.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { LivesModule } from './lives/lives.module';
     AudiobooksModule,
     MediaModule,
     LivesModule,
+    AcademicModule,
   ],
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],

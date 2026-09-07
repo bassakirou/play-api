@@ -28,7 +28,7 @@ export class UsersService {
 
     try {
       const systemRoles = Array.isArray(createUserDto.systemRoles) ? [...createUserDto.systemRoles] : [];
-      if (['ARTIST', 'AUTHOR', 'CREATOR', 'USER', 'ADMIN', 'SUPER_ADMIN'].includes(roleName) && !systemRoles.includes(roleName)) {
+      if (['ARTIST', 'AUTHOR', 'CREATOR', 'ACADEMIC', 'USER', 'ADMIN', 'SUPER_ADMIN'].includes(roleName) && !systemRoles.includes(roleName)) {
         systemRoles.push(roleName);
       }
 
