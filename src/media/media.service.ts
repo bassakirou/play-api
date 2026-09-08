@@ -180,7 +180,31 @@ export class MediaService {
       if (userId) {
         where.userId = userId;
       }
-      await (this.prisma as any).mediaAsset.deleteMany({ where });
+      const asset = await (this.prisma as any).mediaAsset.findFirst({ where });
+      if (asset) {
+        // When deleting a media item, switch any associated video/post to draft mode (isPublished: false)
+        try {
+          const fileSearch = asset.fileUrl || asset.filename;
+          if (fileSearch) {
+            await (this.prisma as any).video.updateMany({
+              where: {
+                OR: [
+                  { videoUrl: { contains: fileSearch } },
+                  { thumbnailUrl: { contains: fileSearch } },
+                ],
+              },
+              data: {
+                isPublished: false,
+              },
+            });
+            this.logger.log(`Switched associated video posts referencing "${fileSearch}" to draft mode.`);
+          }
+        } catch (postErr: any) {
+          this.logger.warn(`Could not set associated videos to draft: ${postErr.message}`);
+        }
+
+        await (this.prisma as any).mediaAsset.deleteMany({ where });
+      }
     } catch (e: any) {
       this.logger.error(`Prisma delete failed: ${e.message}`);
     }
