@@ -40,6 +40,13 @@ export class VideosController {
     return this.videosService.findByArtist(artistId);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('my')
+  findMyVideos(@Req() req: any) {
+    return this.videosService.findByUser(req.user.userId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.videosService.findOne(id);

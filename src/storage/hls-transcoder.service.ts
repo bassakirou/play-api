@@ -129,30 +129,37 @@ export class HlsTranscoderService {
       const height = Number(stream.height) || 720;
       const duration = Math.round(Number(stream.duration || format.duration || 0));
 
+      const maxDim = Math.max(width, height);
+      const minDim = Math.min(width, height);
+
       let maxQuality: QualityTier = '144p';
       let maxQualityLabel = '144P';
-      const allowedQualities: QualityTier[] = ['144p'];
+      let allowedQualities: QualityTier[] = ['144p'];
 
-      if (height >= 1080 || width >= 1920) {
+      if (maxDim >= 1920 || minDim >= 1080) {
         maxQuality = '1080p';
         maxQualityLabel = '1080P';
-        allowedQualities.unshift('240p', '360p', '480p', '720p', '1080p');
-      } else if (height >= 720 || width >= 1280) {
+        allowedQualities = ['1080p', '720p', '480p', '360p', '240p', '144p'];
+      } else if (maxDim >= 1280 || minDim >= 720) {
         maxQuality = '720p';
         maxQualityLabel = '720P';
-        allowedQualities.unshift('240p', '360p', '480p', '720p');
-      } else if (height >= 480 || width >= 854) {
+        allowedQualities = ['720p', '480p', '360p', '240p', '144p'];
+      } else if (maxDim >= 854 || minDim >= 480) {
         maxQuality = '480p';
         maxQualityLabel = '480P';
-        allowedQualities.unshift('240p', '360p', '480p');
-      } else if (height >= 360 || width >= 640) {
+        allowedQualities = ['480p', '360p', '240p', '144p'];
+      } else if (maxDim >= 640 || minDim >= 360) {
         maxQuality = '360p';
         maxQualityLabel = '360P';
-        allowedQualities.unshift('240p', '360p');
-      } else if (height >= 240 || width >= 426) {
+        allowedQualities = ['360p', '240p', '144p'];
+      } else if (maxDim >= 426 || minDim >= 240) {
         maxQuality = '240p';
         maxQualityLabel = '240P';
-        allowedQualities.unshift('240p');
+        allowedQualities = ['240p', '144p'];
+      } else {
+        maxQuality = '144p';
+        maxQualityLabel = '144P';
+        allowedQualities = ['144p'];
       }
 
       return {
@@ -162,7 +169,7 @@ export class HlsTranscoderService {
         formattedDuration: formatSeconds(duration),
         maxQuality,
         maxQualityLabel,
-        allowedQualities: Array.from(new Set(allowedQualities)),
+        allowedQualities,
       };
     } catch (err: any) {
       this.logger.warn(`ffprobe failed on ${inputPath}: ${err.message}. Using default 720p analysis.`);
@@ -173,7 +180,7 @@ export class HlsTranscoderService {
         formattedDuration: '00:00',
         maxQuality: '720p',
         maxQualityLabel: '720P',
-        allowedQualities: ['1080p', '720p', '480p', '360p', '240p', '144p'],
+        allowedQualities: ['720p', '480p', '360p', '240p', '144p'],
       };
     }
   }
@@ -250,7 +257,7 @@ export class HlsTranscoderService {
     const playlistPath = join(tempDir, 'playlist.m3u8').replace(/\\/g, '/');
     const segmentPattern = join(tempDir, 'segment_%03d.ts').replace(/\\/g, '/');
 
-    const command = `ffmpeg -y -i "${inPath}" -c:a aac -b:a 192k -hls_time 6 -hls_playlist_type vod -hls_segment_filename "${segmentPattern}" "${playlistPath}"`;
+    const command = `ffmpeg -y -threads 0 -i "${inPath}" -c:a aac -b:a 192k -hls_time 6 -hls_playlist_type vod -hls_segment_filename "${segmentPattern}" "${playlistPath}"`;
 
     try {
       this.logger.log(`Starting audio HLS transcoding for media ${mediaId}...`);
@@ -292,9 +299,9 @@ export class HlsTranscoderService {
   }
 
   /**
-   * Transcodes a video into multiple quality variants (1080p, 720p, 480p, 360p)
+   * Transcodes a video into multiple quality variants (1080p, 720p, 480p, 360p, 240p, 144p)
    * strictly constrained by the source resolution.
-   * Generates master.m3u8 playlist and uploads all variant playlists & segments to MinIO.
+   * Generates/updates master.m3u8 playlist and uploads all variant playlists & segments to MinIO.
    */
   async generateVideoVariants(opts: {
     inputPath: string;
@@ -325,7 +332,7 @@ export class HlsTranscoderService {
     // Filter requested qualities so we NEVER upscale above the source resolution
     const requested = opts.targetQualities && opts.targetQualities.length > 0
       ? opts.targetQualities
-      : (['1080p', '720p', '480p', '360p', '240p', '144p'] as QualityTier[]);
+      : analysis.allowedQualities;
 
     const validQualities = requested.filter((q) => analysis.allowedQualities.includes(q));
 
@@ -340,9 +347,15 @@ export class HlsTranscoderService {
       (process.env.NODE_ENV === 'production' || !!process.env.VERCEL
         ? 'https://media.pyramidplay.cm'
         : 'http://localhost:9000');
-    const variantUrls: Partial<Record<QualityTier, string>> = {};
+
+    // Retrieve any already-existing variants for this mediaId to merge them
+    const existingInspection = await this.inspectVideoVariants(`${publicBaseUrl}/videos/hls/${mediaId}/master.m3u8`);
+    const allKnownVariants: Partial<Record<QualityTier, string>> = {
+      ...(existingInspection?.variants || {}),
+    };
 
     try {
+      // Process each requested quality
       for (const quality of validQualities) {
         const preset = QUALITY_PRESETS[quality];
         const qualityDir = join(tempDir, quality);
@@ -356,17 +369,21 @@ export class HlsTranscoderService {
         // Scale preserving aspect ratio within bounding box, making width/height even
         const scaleFilter = `scale='min(${preset.width},iw)':'min(${preset.height},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
 
-        const ffmpegCmd = `ffmpeg -y -i "${inPath}" -vf "${scaleFilter}" -c:v libx264 -preset fast -b:v ${preset.videoBitrate} -maxrate ${preset.maxRate} -bufsize ${preset.bufSize} -c:a aac -b:a ${preset.audioBitrate} -hls_time 6 -hls_playlist_type vod -hls_segment_filename "${segmentPattern}" "${playlistPath}"`;
+        const ffmpegCmd = `ffmpeg -y -threads 0 -i "${inPath}" -vf "${scaleFilter}" -c:v libx264 -preset veryfast -b:v ${preset.videoBitrate} -maxrate ${preset.maxRate} -bufsize ${preset.bufSize} -c:a aac -b:a ${preset.audioBitrate} -g 48 -keyint_min 48 -sc_threshold 0 -hls_time 6 -hls_playlist_type vod -hls_segment_filename "${segmentPattern}" "${playlistPath}"`;
 
         this.logger.log(`Transcoding ${quality} for ${mediaId}...`);
         await execAsync(ffmpegCmd);
 
-        variantUrls[quality] = `${publicBaseUrl}/videos/hls/${mediaId}/${quality}/index.m3u8`;
+        allKnownVariants[quality] = `${publicBaseUrl}/videos/hls/${mediaId}/${quality}/index.m3u8`;
       }
+
+      // Order all known variants from highest resolution to lowest
+      const allTierOrder: QualityTier[] = ['1080p', '720p', '480p', '360p', '240p', '144p'];
+      const activeTiers = allTierOrder.filter((q) => !!allKnownVariants[q]);
 
       // Generate master.m3u8 combining all generated quality variants
       let masterContent = '#EXTM3U\n#EXT-X-VERSION:3\n';
-      for (const quality of validQualities) {
+      for (const quality of activeTiers) {
         const preset = QUALITY_PRESETS[quality];
         masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=${preset.bandwidth},RESOLUTION=${preset.width}x${preset.height},NAME="${quality}"\n${quality}/index.m3u8\n`;
       }
@@ -378,33 +395,45 @@ export class HlsTranscoderService {
       const legacyPath = join(tempDir, 'playlist.m3u8');
       writeFileSync(legacyPath, masterContent, 'utf-8');
 
-      // Upload all files recursively to MinIO
-      const uploadDirectory = async (dir: string, baseSub = '') => {
+      // Upload all files recursively to MinIO in parallel batches
+      const uploadEntries: { fullPath: string; objectName: string; contentType: string }[] = [];
+      const collectFiles = (dir: string, baseSub = '') => {
         const entries = readdirSync(dir);
         for (const entry of entries) {
           const fullPath = join(dir, entry);
           const relativeSub = baseSub ? `${baseSub}/${entry}` : entry;
           if (statSync(fullPath).isDirectory()) {
-            await uploadDirectory(fullPath, relativeSub);
+            collectFiles(fullPath, relativeSub);
           } else {
-            const buffer = readFileSync(fullPath);
             const objectName = `hls/${mediaId}/${relativeSub}`;
             const contentType = entry.endsWith('.m3u8')
               ? 'application/x-mpegURL'
               : 'video/mp2t';
-
-            await this.minio.upload({
-              bucket: 'videos',
-              objectName,
-              buffer,
-              contentType,
-            });
+            uploadEntries.push({ fullPath, objectName, contentType });
           }
         }
       };
 
-      this.logger.log(`Uploading multi-quality HLS stream to MinIO for media ${mediaId}...`);
-      await uploadDirectory(tempDir);
+      collectFiles(tempDir);
+
+      this.logger.log(`Uploading ${uploadEntries.length} files to MinIO for media ${mediaId}...`);
+
+      // Upload in parallel batches of 8
+      const BATCH_SIZE = 8;
+      for (let i = 0; i < uploadEntries.length; i += BATCH_SIZE) {
+        const batch = uploadEntries.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (item) => {
+            const buffer = readFileSync(item.fullPath);
+            await this.minio.upload({
+              bucket: 'videos',
+              objectName: item.objectName,
+              buffer,
+              contentType: item.contentType,
+            });
+          })
+        );
+      }
 
       rmSync(tempDir, { recursive: true, force: true });
 
@@ -413,7 +442,7 @@ export class HlsTranscoderService {
 
       return {
         masterUrl,
-        variants: variantUrls,
+        variants: allKnownVariants,
         analysis,
       };
     } catch (err: any) {

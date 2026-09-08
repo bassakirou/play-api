@@ -59,6 +59,20 @@ export class VideosService {
     return Promise.all(videos.map((v) => this.hydrateUrls(v)));
   }
 
+  async findByUser(userId: string) {
+    const videos = await (this.prisma as any).video.findMany({
+      where: {
+        OR: [
+          { userId },
+          { artists: { some: { userId } } },
+        ],
+      },
+      include: defaultInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+    return Promise.all(videos.map((v) => this.hydrateUrls(v)));
+  }
+
   async create(createVideoDto: CreateVideoDto, userId?: string) {
     const dto = createVideoDto as unknown as Record<string, any>;
     const {
