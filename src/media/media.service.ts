@@ -174,9 +174,13 @@ export class MediaService {
     );
   }
 
-  async delete(id: string) {
+  async delete(id: string, userId?: string) {
     try {
-      await (this.prisma as any).mediaAsset.delete({ where: { id } });
+      const where: any = { id };
+      if (userId) {
+        where.userId = userId;
+      }
+      await (this.prisma as any).mediaAsset.deleteMany({ where });
     } catch (e: any) {
       this.logger.error(`Prisma delete failed: ${e.message}`);
     }

@@ -46,4 +46,9 @@ export class CreateMediaAssetDto {
   @IsOptional()
   @IsString()
   format?: string;
+
+  @ApiPropertyOptional({ description: 'ID de l utilisateur propriétaire' })
+  @IsOptional()
+  @IsString()
+  userId?: string;
 }

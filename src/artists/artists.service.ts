@@ -158,7 +158,16 @@ export class ArtistsService {
 
   async findAllChannels() {
     const channels = await this.prisma.artist.findMany({
-      where: { userId: { not: null } },
+      where: {
+        userId: { not: null },
+        user: {
+          OR: [
+            { systemRoles: { has: 'CREATOR' } },
+            { role: { name: 'CREATOR' } },
+            { role: { name: 'ADMIN' } },
+          ],
+        },
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         user: {
@@ -166,6 +175,7 @@ export class ArtistsService {
             id: true,
             name: true,
             email: true,
+            systemRoles: true,
             role: { select: { name: true } },
           },
         },

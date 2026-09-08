@@ -19,19 +19,20 @@ export class UsersService {
   async create(createUserDto: CreateUserDto) {
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
+    const explicitRoles = createUserDto.systemRoles;
+    const hasExplicitSystemRoles = Array.isArray(explicitRoles) && explicitRoles.length > 0;
+    const systemRoles: string[] = hasExplicitSystemRoles
+      ? [...explicitRoles]
+      : [(createUserDto.role || 'USER').toUpperCase()];
+
     // Find role
-    const roleName = (createUserDto.role || 'USER').toUpperCase();
-    let role = await this.prisma.role.findUnique({ where: { name: roleName } });
+    const primaryRoleName = (hasExplicitSystemRoles ? systemRoles[0] : (createUserDto.role || 'USER')).toUpperCase();
+    let role = await this.prisma.role.findUnique({ where: { name: primaryRoleName } });
     if (!role) {
-      role = await this.prisma.role.create({ data: { name: roleName } });
+      role = await this.prisma.role.create({ data: { name: primaryRoleName } });
     }
 
     try {
-      const systemRoles = Array.isArray(createUserDto.systemRoles) ? [...createUserDto.systemRoles] : [];
-      if (['ARTIST', 'AUTHOR', 'CREATOR', 'ACADEMIC', 'USER', 'ADMIN', 'SUPER_ADMIN'].includes(roleName) && !systemRoles.includes(roleName)) {
-        systemRoles.push(roleName);
-      }
-
       const created = await this.prisma.user.create({
         data: {
           email: createUserDto.email,
@@ -42,16 +43,16 @@ export class UsersService {
         },
       });
 
-      // Création du profil Artiste UNIQUEMENT si l'utilisateur possède le rôle système ARTIST
-      if (systemRoles.includes('ARTIST') || roleName === 'ARTIST') {
-        const artistName = (created.name || created.email.split('@')[0] || 'Artiste').trim();
+      // Création du profil Artiste / Chaîne UNIQUEMENT si l'utilisateur possède le rôle système ARTIST ou CREATOR
+      if (systemRoles.includes('ARTIST') || systemRoles.includes('CREATOR')) {
+        const profileName = (created.name || created.email.split('@')[0] || (systemRoles.includes('CREATOR') ? 'Chaîne' : 'Artiste')).trim();
         const existingArtist = await this.prisma.artist.findUnique({
           where: { userId: created.id },
         });
         if (!existingArtist) {
           await this.prisma.artist.create({
             data: {
-              name: artistName,
+              name: profileName,
               userId: created.id,
             },
           });

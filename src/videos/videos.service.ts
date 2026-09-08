@@ -60,11 +60,17 @@ export class VideosService {
   }
 
   async findByUser(userId: string) {
+    const artistProfile = await this.prisma.artist.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
     const videos = await (this.prisma as any).video.findMany({
       where: {
         OR: [
           { userId },
           { artists: { some: { userId } } },
+          ...(artistProfile ? [{ artists: { some: { id: artistProfile.id } } }] : []),
         ],
       },
       include: defaultInclude,
@@ -90,7 +96,9 @@ export class VideosService {
       ? artistIds
       : artistId
         ? [artistId]
-        : [];
+        : channelId
+          ? [channelId]
+          : [];
 
     let effectiveUserId = explicitUserId || userId;
 
@@ -239,10 +247,16 @@ export class VideosService {
       data.tags = Array.isArray(tags) ? tags : [];
     }
 
+    const effectiveArtistIds = Array.isArray(artistIds)
+      ? artistIds
+      : channelId
+        ? [channelId]
+        : undefined;
+
     const updateData: any = {
       ...data,
-      ...(artistIds
-        ? { artists: { set: artistIds.map((aid: string) => ({ id: aid })) } }
+      ...(effectiveArtistIds
+        ? { artists: { set: effectiveArtistIds.map((aid: string) => ({ id: aid })) } }
         : {}),
       ...(videoPlaylistIds
         ? {
