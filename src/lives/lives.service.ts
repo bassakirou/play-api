@@ -146,19 +146,31 @@ export class LivesService {
     const isCreator =
       systemRoles.includes('CREATOR') ||
       systemRoles.includes('CREATEUR') ||
+      systemRoles.includes('AUTHOR') ||
+      systemRoles.includes('AUTEUR') ||
+      systemRoles.includes('ARTIST') ||
+      systemRoles.includes('ARTISTE') ||
+      systemRoles.includes('ACADEMIC') ||
+      systemRoles.includes('FORMATEUR') ||
+      systemRoles.includes('ENSEIGNANT') ||
       systemRoles.includes('ADMIN') ||
       systemRoles.includes('SUPER_ADMIN') ||
-      systemRoles.includes('ARTIST') ||
       roleName === 'CREATOR' ||
       roleName === 'CREATEUR' ||
+      roleName === 'AUTHOR' ||
+      roleName === 'AUTEUR' ||
+      roleName === 'ARTIST' ||
+      roleName === 'ARTISTE' ||
+      roleName === 'ACADEMIC' ||
+      roleName === 'FORMATEUR' ||
+      roleName === 'ENSEIGNANT' ||
       roleName === 'ADMIN' ||
       roleName === 'SUPER_ADMIN' ||
-      roleName === 'ARTIST' ||
       !!user.artistProfile;
 
     if (!isCreator) {
       throw new ForbiddenException(
-        'Accès refusé : Seuls les utilisateurs avec le rôle système CREATOR, ARTIST ou ADMIN peuvent créer un Live.',
+        'Accès refusé : Seuls les utilisateurs avec un profil Studio (CREATOR, AUTHOR, ARTIST, ACADEMIC) ou ADMIN peuvent créer un Live.',
       );
     }
 

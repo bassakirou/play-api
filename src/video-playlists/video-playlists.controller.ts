@@ -26,53 +26,59 @@ export class VideoPlaylistsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get()
-  findMine(@Req() req: { user: { userId: string } }) {
-    return this.videoPlaylistsService.findMine(req.user.userId);
+  findMine(@Req() req: any) {
+    const userId = req.user?.userId || req.user?.id || req.user?.sub;
+    return this.videoPlaylistsService.findMine(userId);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Req() req: { user: { userId: string } }, @Param('id') id: string) {
-    return this.videoPlaylistsService.findOne(req.user.userId, id);
+  findOne(@Req() req: any, @Param('id') id: string) {
+    const userId = req.user?.userId || req.user?.id || req.user?.sub;
+    return this.videoPlaylistsService.findOne(userId, id);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post()
   create(
-    @Req() req: { user: { userId: string } },
+    @Req() req: any,
     @Body() dto: CreateVideoPlaylistDto,
   ) {
-    return this.videoPlaylistsService.create(req.user.userId, dto);
+    const userId = req.user?.userId || req.user?.id || req.user?.sub;
+    return this.videoPlaylistsService.create(userId, dto);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post(':id/videos/:videoId')
   addVideo(
-    @Req() req: { user: { userId: string } },
+    @Req() req: any,
     @Param('id') id: string,
     @Param('videoId') videoId: string,
   ) {
-    return this.videoPlaylistsService.addVideo(req.user.userId, id, videoId);
+    const userId = req.user?.userId || req.user?.id || req.user?.sub;
+    return this.videoPlaylistsService.addVideo(userId, id, videoId);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Delete(':id/videos/:videoId')
   removeVideo(
-    @Req() req: { user: { userId: string } },
+    @Req() req: any,
     @Param('id') id: string,
     @Param('videoId') videoId: string,
   ) {
-    return this.videoPlaylistsService.removeVideo(req.user.userId, id, videoId);
+    const userId = req.user?.userId || req.user?.id || req.user?.sub;
+    return this.videoPlaylistsService.removeVideo(userId, id, videoId);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  delete(@Req() req: { user: { userId: string } }, @Param('id') id: string) {
-    return this.videoPlaylistsService.delete(req.user.userId, id);
+  delete(@Req() req: any, @Param('id') id: string) {
+    const userId = req.user?.userId || req.user?.id || req.user?.sub;
+    return this.videoPlaylistsService.delete(userId, id);
   }
 }
