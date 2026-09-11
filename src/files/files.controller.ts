@@ -1011,8 +1011,30 @@ export class FilesController {
         const relativePath = url.substring(url.indexOf('/uploads/'));
         const diskPath = join(process.cwd(), relativePath);
         if (existsSync(diskPath)) {
+          if (diskPath.endsWith('.m3u8')) {
+            const text = readFileSync(diskPath, 'utf-8');
+            const baseDirUrl = url.substring(0, url.lastIndexOf('/') + 1);
+            const reqProtocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+            const reqHost = req.headers['x-forwarded-host'] || req.get('host') || 'api.pyramidplay.cm';
+            const selfBase = `${reqProtocol}://${reqHost}/files/resolved-audio?url=`;
+
+            const rewritten = text
+              .split('\n')
+              .map((line) => {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+                  return line;
+                }
+                return `${selfBase}${encodeURIComponent(baseDirUrl + trimmed)}`;
+              })
+              .join('\n');
+
+            res.setHeader('Content-Type', 'application/x-mpegURL');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.status(200).send(rewritten);
+            return;
+          }
           if (diskPath.endsWith('.mp3')) res.setHeader('Content-Type', 'audio/mpeg');
-          else if (diskPath.endsWith('.m3u8')) res.setHeader('Content-Type', 'application/x-mpegURL');
           else if (diskPath.endsWith('.ts')) res.setHeader('Content-Type', 'video/mp2t');
           res.setHeader('Accept-Ranges', 'bytes');
           res.status(200);
@@ -1041,6 +1063,30 @@ export class FilesController {
 
       if (!upstream || !upstream.ok) {
         res.status(upstream ? upstream.status : 404).send('Audio stream not found');
+        return;
+      }
+
+      if (target.endsWith('.m3u8') || upstream.headers.get('content-type')?.includes('mpegurl')) {
+        const text = await upstream.text();
+        const baseDirUrl = target.substring(0, target.lastIndexOf('/') + 1);
+        const reqProtocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+        const reqHost = req.headers['x-forwarded-host'] || req.get('host') || 'api.pyramidplay.cm';
+        const selfBase = `${reqProtocol}://${reqHost}/files/resolved-audio?url=`;
+
+        const rewritten = text
+          .split('\n')
+          .map((line) => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+              return line;
+            }
+            return `${selfBase}${encodeURIComponent(baseDirUrl + trimmed)}`;
+          })
+          .join('\n');
+
+        res.setHeader('Content-Type', 'application/x-mpegURL');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.status(200).send(rewritten);
         return;
       }
 
@@ -1140,6 +1186,29 @@ export class FilesController {
         const relativePath = url.substring(url.indexOf('/uploads/'));
         const diskPath = join(process.cwd(), relativePath);
         if (existsSync(diskPath)) {
+          if (diskPath.endsWith('.m3u8')) {
+            const text = readFileSync(diskPath, 'utf-8');
+            const baseDirUrl = url.substring(0, url.lastIndexOf('/') + 1);
+            const reqProtocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+            const reqHost = req.headers['x-forwarded-host'] || req.get('host') || 'api.pyramidplay.cm';
+            const selfBase = `${reqProtocol}://${reqHost}/files/resolved-video?url=`;
+
+            const rewritten = text
+              .split('\n')
+              .map((line) => {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+                  return line;
+                }
+                return `${selfBase}${encodeURIComponent(baseDirUrl + trimmed)}`;
+              })
+              .join('\n');
+
+            res.setHeader('Content-Type', 'application/x-mpegURL');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.status(200).send(rewritten);
+            return;
+          }
           if (diskPath.endsWith('.ts')) res.setHeader('Content-Type', 'video/mp2t');
           else if (diskPath.endsWith('.mp4')) res.setHeader('Content-Type', 'video/mp4');
           res.setHeader('Accept-Ranges', 'bytes');
@@ -1169,6 +1238,30 @@ export class FilesController {
 
       if (!upstream || !upstream.ok) {
         res.status(upstream ? upstream.status : 404).send('Video stream not found');
+        return;
+      }
+
+      if (target.endsWith('.m3u8') || upstream.headers.get('content-type')?.includes('mpegurl')) {
+        const text = await upstream.text();
+        const baseDirUrl = target.substring(0, target.lastIndexOf('/') + 1);
+        const reqProtocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+        const reqHost = req.headers['x-forwarded-host'] || req.get('host') || 'api.pyramidplay.cm';
+        const selfBase = `${reqProtocol}://${reqHost}/files/resolved-video?url=`;
+
+        const rewritten = text
+          .split('\n')
+          .map((line) => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+              return line;
+            }
+            return `${selfBase}${encodeURIComponent(baseDirUrl + trimmed)}`;
+          })
+          .join('\n');
+
+        res.setHeader('Content-Type', 'application/x-mpegURL');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.status(200).send(rewritten);
         return;
       }
 

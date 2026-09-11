@@ -354,6 +354,8 @@ export class HlsTranscoderService {
       ...(existingInspection?.variants || {}),
     };
 
+    const isPortrait = analysis.height > analysis.width;
+
     try {
       // Process each requested quality
       for (const quality of validQualities) {
@@ -366,8 +368,11 @@ export class HlsTranscoderService {
         const playlistPath = join(qualityDir, 'index.m3u8').replace(/\\/g, '/');
         const segmentPattern = join(qualityDir, 'segment_%03d.ts').replace(/\\/g, '/');
 
+        const targetWidth = isPortrait ? preset.height : preset.width;
+        const targetHeight = isPortrait ? preset.width : preset.height;
+
         // Scale preserving aspect ratio within bounding box, making width/height even
-        const scaleFilter = `scale='min(${preset.width},iw)':'min(${preset.height},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
+        const scaleFilter = `scale=w='min(${targetWidth},iw)':h='min(${targetHeight},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
 
         const ffmpegCmd = `ffmpeg -y -threads 0 -i "${inPath}" -vf "${scaleFilter}" -c:v libx264 -preset veryfast -b:v ${preset.videoBitrate} -maxrate ${preset.maxRate} -bufsize ${preset.bufSize} -c:a aac -b:a ${preset.audioBitrate} -g 48 -keyint_min 48 -sc_threshold 0 -hls_time 6 -hls_playlist_type vod -hls_segment_filename "${segmentPattern}" "${playlistPath}"`;
 
@@ -385,7 +390,9 @@ export class HlsTranscoderService {
       let masterContent = '#EXTM3U\n#EXT-X-VERSION:3\n';
       for (const quality of activeTiers) {
         const preset = QUALITY_PRESETS[quality];
-        masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=${preset.bandwidth},RESOLUTION=${preset.width}x${preset.height},NAME="${quality}"\n${quality}/index.m3u8\n`;
+        const targetWidth = isPortrait ? preset.height : preset.width;
+        const targetHeight = isPortrait ? preset.width : preset.height;
+        masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=${preset.bandwidth},RESOLUTION=${targetWidth}x${targetHeight},NAME="${quality}"\n${quality}/index.m3u8\n`;
       }
 
       const masterPath = join(tempDir, 'master.m3u8');
@@ -479,7 +486,7 @@ export class HlsTranscoderService {
           formattedDuration: '00:00',
           maxQuality: '720p',
           maxQualityLabel: '720P',
-          allowedQualities: ['720p', '480p', '360p'],
+          allowedQualities: ['720p', '480p', '360p', '240p', '144p'],
         },
       };
     }
@@ -521,7 +528,8 @@ export class HlsTranscoderService {
       // 3. Try HTTP fetch
       if (!masterContent) {
         try {
-          const res = await fetch(url.startsWith('http') ? url : `${publicBaseUrl}${url.startsWith('/') ? '' : '/'}${url}`);
+          const fetchTarget = url.startsWith('http') ? url : `${publicBaseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+          const res = await fetch(fetchTarget);
           if (res.ok) {
             masterContent = await res.text();
           }
@@ -546,7 +554,8 @@ export class HlsTranscoderService {
             }
             const nameMatch = line.match(/NAME="([^"]+)"/);
             if (nameMatch && (['1080p', '720p', '480p', '360p', '240p', '144p'] as string[]).includes(nameMatch[1])) {
-              foundQualities.push(nameMatch[1] as QualityTier);
+              const q = nameMatch[1] as QualityTier;
+              if (!foundQualities.includes(q)) foundQualities.push(q);
             }
           } else if (line.endsWith('index.m3u8')) {
             const q = line.replace(/\/index\.m3u8$/, '').trim() as QualityTier;
@@ -557,11 +566,26 @@ export class HlsTranscoderService {
         }
       }
 
-      // If we couldn't parse specific qualities from masterContent, default to matching known presets
-      if (foundQualities.length === 0) {
-        foundQualities.push('720p', '480p', '360p', '240p', '144p');
-        maxWidth = 1280;
-        maxHeight = 720;
+      // 4. If masterContent was missing or didn't list streams, check individual variant playlists on MinIO/disk
+      if (foundQualities.length === 0 && mediaId) {
+        const allPossibleTiers: QualityTier[] = ['1080p', '720p', '480p', '360p', '240p', '144p'];
+        for (const tier of allPossibleTiers) {
+          let tierExists = false;
+          if (this.minio.isEnabled()) {
+            try {
+              tierExists = await this.minio.objectExists('videos', `hls/${mediaId}/${tier}/index.m3u8`);
+            } catch {}
+          }
+          if (!tierExists) {
+            const localVariant = join(process.cwd(), 'uploads', 'temp_hls_video', mediaId, tier, 'index.m3u8');
+            if (existsSync(localVariant)) {
+              tierExists = true;
+            }
+          }
+          if (tierExists && !foundQualities.includes(tier)) {
+            foundQualities.push(tier);
+          }
+        }
       }
 
       const variants: Partial<Record<QualityTier, string>> = {};
@@ -571,13 +595,14 @@ export class HlsTranscoderService {
           : `${url.substring(0, url.lastIndexOf('/'))}/${q}/index.m3u8`;
       });
 
+      // Determine max quality
       let maxQuality: QualityTier = '720p';
-      if (maxHeight >= 1080 || foundQualities.includes('1080p')) maxQuality = '1080p';
-      else if (maxHeight >= 720 || foundQualities.includes('720p')) maxQuality = '720p';
-      else if (maxHeight >= 480 || foundQualities.includes('480p')) maxQuality = '480p';
-      else if (maxHeight >= 360 || foundQualities.includes('360p')) maxQuality = '360p';
-      else if (maxHeight >= 240 || foundQualities.includes('240p')) maxQuality = '240p';
-      else maxQuality = '144p';
+      if (foundQualities.includes('1080p') || maxHeight >= 1080 || maxWidth >= 1920) maxQuality = '1080p';
+      else if (foundQualities.includes('720p') || maxHeight >= 720 || maxWidth >= 1280) maxQuality = '720p';
+      else if (foundQualities.includes('480p') || maxHeight >= 480 || maxWidth >= 854) maxQuality = '480p';
+      else if (foundQualities.includes('360p') || maxHeight >= 360 || maxWidth >= 640) maxQuality = '360p';
+      else if (foundQualities.includes('240p') || maxHeight >= 240 || maxWidth >= 426) maxQuality = '240p';
+      else if (foundQualities.includes('144p')) maxQuality = '144p';
 
       const allowedQualities: QualityTier[] = [];
       if (maxQuality === '1080p') allowedQualities.push('1080p', '720p', '480p', '360p', '240p', '144p');
@@ -591,8 +616,8 @@ export class HlsTranscoderService {
         masterUrl,
         variants,
         analysis: {
-          width: maxWidth || QUALITY_PRESETS[maxQuality].width,
-          height: maxHeight || QUALITY_PRESETS[maxQuality].height,
+          width: maxWidth || (QUALITY_PRESETS[maxQuality]?.width || 1280),
+          height: maxHeight || (QUALITY_PRESETS[maxQuality]?.height || 720),
           duration: 0,
           formattedDuration: '00:00',
           maxQuality,

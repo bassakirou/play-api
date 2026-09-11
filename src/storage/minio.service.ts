@@ -272,6 +272,36 @@ export class MinioService implements OnModuleInit {
     throw lastError || new Error(`Object ${objectName} not found in buckets: ${candidateBuckets.join(', ')}`);
   }
 
+  async objectExists(bucket: string, objectName: string): Promise<boolean> {
+    if (!this.client) return false;
+    const rawBucket = bucket || 'videos';
+    const candidateBuckets = [
+      (this.cfg.buckets?.[rawBucket as any] as string) || rawBucket,
+      rawBucket,
+      rawBucket.replace(/^play-/, ''),
+      `play-${rawBucket.replace(/^play-/, '')}`,
+    ].filter((b, i, a) => b && a.indexOf(b) === i);
+
+    const strippedObj = objectName.replace(/^hls\//, '');
+    const candidateObjects = [
+      objectName,
+      strippedObj,
+      `hls/${strippedObj}`,
+    ].filter((o, i, a) => o && a.indexOf(o) === i);
+
+    for (const b of candidateBuckets) {
+      for (const obj of candidateObjects) {
+        try {
+          await this.client.statObject(b, obj);
+          return true;
+        } catch {
+          // Object not found in this candidate, continue
+        }
+      }
+    }
+    return false;
+  }
+
   refreshUrl(url: string | null | undefined): string | null {
     if (!url) return null;
     const isProduction =
