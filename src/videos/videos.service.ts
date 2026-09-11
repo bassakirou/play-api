@@ -26,9 +26,19 @@ export class VideosService {
     private minio: MinioService,
   ) { }
 
-  async findAll() {
+  async findAll(category?: string, isAcademic?: boolean) {
+    const where: any = { isPublished: true };
+    if (category) {
+      where.OR = [
+        { category: { equals: category, mode: 'insensitive' } },
+        { videoCategory: { normalizedName: category.trim().toLowerCase() } },
+      ];
+    }
+    if (isAcademic !== undefined) {
+      where.isAcademic = isAcademic;
+    }
     const videos = await (this.prisma as any).video.findMany({
-      where: { isPublished: true },
+      where,
       include: defaultInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -159,6 +169,7 @@ export class VideosService {
     const taxonomy = await this.resolveTaxonomy(rest.category, tags);
     const data: any = {
       ...rest,
+      isAcademic: Boolean(dto.isAcademic),
       category: taxonomy.categoryName,
       categoryId: taxonomy.categoryId,
       tags: taxonomy.tags.map((tag) => tag.name),
@@ -231,6 +242,7 @@ export class VideosService {
         videoUrl,
         thumbnailUrl: thumbnailUrl || null,
         duration: Math.trunc(duration),
+        isAcademic: Boolean(body?.isAcademic),
         isPublished: typeof body?.isPublished === 'boolean' ? body.isPublished : true,
         category: taxonomy.categoryName,
         categoryId: taxonomy.categoryId,
@@ -266,6 +278,9 @@ export class VideosService {
     } = updateVideoDto || {};
 
     const data: Record<string, any> = { ...rest };
+    if (typeof rest.isAcademic !== 'undefined') {
+      data.isAcademic = Boolean(rest.isAcademic);
+    }
 
     if (channelId) {
       const channel = await this.prisma.artist.findUnique({

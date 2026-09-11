@@ -31,4 +31,9 @@ export class CreateAlbumDto {
   @IsUUID()
   @IsOptional()
   artistId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  isAcademic?: boolean;
 }
+

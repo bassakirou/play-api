@@ -27,8 +27,12 @@ export class LivesController {
     @Query('type') type?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
+    @Query('isAcademic') isAcademic?: string,
   ) {
-    return this.livesService.findAll({ category, type, status, search });
+    let academicBool: boolean | undefined = undefined;
+    if (isAcademic === 'true') academicBool = true;
+    else if (isAcademic === 'false') academicBool = false;
+    return this.livesService.findAll({ category, type, status, search, isAcademic: academicBool });
   }
 
   @Get(':id')

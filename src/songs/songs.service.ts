@@ -13,8 +13,13 @@ export class SongsService {
     private minio: MinioService,
   ) {}
 
-  async findAll() {
+  async findAll(isAcademic?: boolean) {
+    const where: any = {};
+    if (isAcademic !== undefined) {
+      where.isAcademic = isAcademic;
+    }
     const songs = await this.prisma.song.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: { artists: true, groups: true, album: true, genre: true },
     });
@@ -144,6 +149,7 @@ export class SongsService {
       duration: Number(duration),
       audioUrl,
       isSingle,
+      isAcademic: Boolean(dto.isAcademic),
       coverUrl: coverUrl || null,
       ...(primaryGenreId ? { genre: { connect: { id: primaryGenreId } } } : {}),
       ...(finalGenreIds.length > 0
@@ -194,6 +200,9 @@ export class SongsService {
 
     if (typeof coverUrl !== 'undefined') {
       updateData.coverUrl = coverUrl || null;
+    }
+    if (typeof updateSongDto?.isAcademic !== 'undefined') {
+      updateData.isAcademic = Boolean(updateSongDto.isAcademic);
     }
 
     if (isSingle) {

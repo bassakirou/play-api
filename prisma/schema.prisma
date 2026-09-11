@@ -113,6 +113,7 @@ model Album {
   year        Int
   coverUrl    String?
   description String?
+  isAcademic  Boolean       @default(false)
   artistId    String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -127,6 +128,7 @@ model Song {
   duration    Int
   coverUrl    String?
   isSingle    Boolean       @default(false)
+  isAcademic  Boolean       @default(false)
   audioUrl    String
   albumId     String?
   genreId     String?
@@ -191,6 +193,7 @@ model Video {
   views         Int             @default(0)
   likes         Int             @default(0)
   isPublished   Boolean         @default(false)
+  isAcademic    Boolean         @default(false)
   category      String?
   tags          String[]        @default([])
   categoryId    String?
@@ -335,6 +338,7 @@ model LiveStream {
   type          String         @default("video") // "video" | "radio"
   category      String         @default("all")   // "concerts" | "talk" | "radio" | "video" | "music"
   status        String         @default("LIVE")  // "SCHEDULED" | "LIVE" | "ENDED"
+  isAcademic    Boolean        @default(false)
   streamKey     String         @unique @default(uuid())
   streamUrl     String?
   playbackType  String         @default("WEBRTC") // "WEBRTC" | "HLS" | "AUDIO_STREAM" | "EXTERNAL"

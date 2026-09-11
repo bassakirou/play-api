@@ -29,6 +29,11 @@ export class CreateSongDto {
   @IsBoolean()
   isSingle: boolean;
 
+  @ApiProperty({ required: false })
+  @IsBoolean()
+  @IsOptional()
+  isAcademic?: boolean;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

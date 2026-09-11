@@ -24,8 +24,14 @@ export class VideosController {
   constructor(private readonly videosService: VideosService) { }
 
   @Get()
-  findAll() {
-    return this.videosService.findAll();
+  findAll(
+    @Query('category') category?: string,
+    @Query('isAcademic') isAcademic?: string,
+  ) {
+    let academicBool: boolean | undefined = undefined;
+    if (isAcademic === 'true') academicBool = true;
+    else if (isAcademic === 'false') academicBool = false;
+    return this.videosService.findAll(category, academicBool);
   }
 
   @ApiBearerAuth()

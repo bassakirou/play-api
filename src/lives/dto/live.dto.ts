@@ -53,6 +53,10 @@ export class CreateLiveDto {
   @IsOptional()
   @IsBoolean()
   isFeatured?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isAcademic?: boolean;
 }
 
 export class UpdateLiveDto {
@@ -112,6 +116,10 @@ export class UpdateLiveDto {
   @IsOptional()
   @IsBoolean()
   isFeatured?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isAcademic?: boolean;
 }
 
 export class AddCommentDto {

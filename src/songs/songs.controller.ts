@@ -9,6 +9,7 @@ import {
   Delete,
   UseGuards,
   Request,
+  Query,
 } from '@nestjs/common';
 import { SongsService } from './songs.service';
 import { CreateSongDto } from './dto/create-song.dto';
@@ -31,8 +32,9 @@ export class SongsController {
   }
 
   @Get()
-  findAll() {
-    return this.songsService.findAll();
+  findAll(@Query('isAcademic') isAcademic?: string) {
+    const filter = isAcademic !== undefined ? isAcademic === 'true' : undefined;
+    return this.songsService.findAll(filter);
   }
 
   @Get(':id')

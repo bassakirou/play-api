@@ -25,11 +25,22 @@ export class LivesService {
     type?: string;
     status?: string;
     search?: string;
+    isAcademic?: boolean;
   }) {
     const where: any = {};
 
     if (query?.category && query.category !== 'all') {
-      where.category = query.category;
+      if (query.category === 'academic') {
+        where.OR = [
+          { category: 'academic' },
+          { isAcademic: true },
+        ];
+      } else {
+        where.category = query.category;
+      }
+    }
+    if (query?.isAcademic !== undefined) {
+      where.isAcademic = query.isAcademic;
     }
     if (query?.type && query.type !== 'all') {
       where.type = query.type;
@@ -208,6 +219,7 @@ export class LivesService {
         retentionDays,
         cleanupAt,
         isFeatured: dto.isFeatured || false,
+        isAcademic: Boolean(dto.isAcademic) || dto.category === 'academic',
         userId: user.id,
       },
       include: {
@@ -236,6 +248,12 @@ export class LivesService {
     }
 
     const data: any = { ...dto };
+    if (typeof dto.isAcademic !== 'undefined') {
+      data.isAcademic = Boolean(dto.isAcademic);
+    }
+    if (dto.category === 'academic') {
+      data.isAcademic = true;
+    }
     if (dto.retentionDays !== undefined) {
       data.cleanupAt =
         dto.retentionDays > 0
@@ -477,6 +495,7 @@ export class LivesService {
       peakViewers: live.peakViewers || 0,
       likesCount: live.likesCount || 0,
       isFeatured: live.isFeatured || false,
+      isAcademic: Boolean(live.isAcademic || live.category === 'academic'),
       scheduledAt: live.scheduledAt,
       startedAt: live.startedAt || live.createdAt,
       endedAt: live.endedAt,

@@ -7,10 +7,11 @@ import {
   Param,
   Delete,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { AlbumsService } from './albums.service';
 import { CreateAlbumDto } from './dto/create-album.dto';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { CheckPermissions } from '../auth/permissions.decorator';
@@ -29,8 +30,12 @@ export class AlbumsController {
   }
 
   @Get()
-  findAll() {
-    return this.albumsService.findAll();
+  @ApiQuery({ name: 'isAcademic', required: false, type: Boolean })
+  findAll(@Query('isAcademic') isAcademic?: string) {
+    let academicBool: boolean | undefined = undefined;
+    if (isAcademic === 'true') academicBool = true;
+    else if (isAcademic === 'false') academicBool = false;
+    return this.albumsService.findAll(academicBool);
   }
 
   @Get(':id')

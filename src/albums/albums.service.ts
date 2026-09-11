@@ -11,13 +11,14 @@ export class AlbumsService {
   ) {}
 
   async create(createAlbumDto: CreateAlbumDto) {
-    const { title, year, coverUrl, description, artistId, artistIds, groupIds } = createAlbumDto as any;
+    const { title, year, coverUrl, description, artistId, artistIds, groupIds, isAcademic } = createAlbumDto as any;
     const finalArtistId = artistId || (artistIds && artistIds.length ? artistIds[0] : null);
     const data: any = {
       title,
       year: Number(year),
       coverUrl: coverUrl || null,
       description: description || null,
+      isAcademic: Boolean(isAcademic),
       ...(finalArtistId ? { artist: { connect: { id: finalArtistId } } } : {}),
       ...(groupIds && groupIds.length
         ? { groups: { connect: groupIds.map((gid: string) => ({ id: gid })) } }
@@ -29,7 +30,7 @@ export class AlbumsService {
     });
   }
 
-  async findAll() {
+  async findAll(isAcademic?: boolean) {
     // Nettoyage automatique des albums orphelins sans aucune chanson rattachée
     const emptyAlbums = await this.prisma.album.findMany({
       where: { songs: { none: {} } },
@@ -41,7 +42,13 @@ export class AlbumsService {
       });
     }
 
+    const where: any = {};
+    if (isAcademic !== undefined) {
+      where.isAcademic = isAcademic;
+    }
+
     const albums = await this.prisma.album.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         artist: true,
@@ -88,9 +95,13 @@ export class AlbumsService {
   }
 
   update(id: string, updateAlbumDto: any) {
+    const data = { ...updateAlbumDto };
+    if (typeof data.isAcademic !== 'undefined') {
+      data.isAcademic = Boolean(data.isAcademic);
+    }
     return this.prisma.album.update({
       where: { id },
-      data: updateAlbumDto,
+      data,
     });
   }
 

@@ -81,4 +81,10 @@ export class CreateVideoDto {
   @IsOptional()
   @IsUUID('all', { each: true })
   videoPlaylistIds?: string[];
+
+  @ApiProperty({ required: false })
+  @IsBoolean()
+  @IsOptional()
+  isAcademic?: boolean;
 }
+
