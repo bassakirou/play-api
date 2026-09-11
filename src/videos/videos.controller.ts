@@ -9,6 +9,7 @@ import {
   Post,
   Put,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -38,6 +39,16 @@ export class VideosController {
   @Get('artist/:artistId')
   findByArtist(@Param('artistId') artistId: string) {
     return this.videosService.findByArtist(artistId);
+  }
+
+  @Get('taxonomy')
+  getTaxonomy(@Query('category') category?: string) {
+    return this.videosService.getTaxonomy(category);
+  }
+
+  @Get(':id/recommendations')
+  findRecommendations(@Param('id') id: string, @Query('limit') limit?: string) {
+    return this.videosService.findRecommendations(id, Number(limit) || 8);
   }
 
   @ApiBearerAuth()
@@ -88,7 +99,8 @@ export class VideosController {
     const incrementViews = !!body?.incrementViews;
     const likeDelta =
       typeof body?.likeDelta === 'number' ? Number(body.likeDelta) : undefined;
-    return this.videosService.updateMetrics(id, { incrementViews, likeDelta });
+    const country = typeof body?.country === 'string' ? body.country : undefined;
+    return this.videosService.updateMetrics(id, { incrementViews, likeDelta, country });
   }
 
   @ApiBearerAuth()

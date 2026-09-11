@@ -193,14 +193,74 @@ model Video {
   isPublished   Boolean         @default(false)
   category      String?
   tags          String[]        @default([])
+  categoryId    String?
   genreId       String?
   userId        String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   genre         Genre?          @relation(fields: [genreId], references: [id])
+  videoCategory VideoCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  videoTags     VideoTagOnVideo[]
+  taxonomyEvents VideoTaxonomyEvent[]
   artists       Artist[]        @relation("VideoArtists")
   VideoPlaylist VideoPlaylist[] @relation("VideoPlaylistVideos")
+}
+
+model VideoCategory {
+  id             String               @id @default(uuid())
+  name           String
+  normalizedName String               @unique
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  videos         Video[]
+  tags           VideoTag[]
+  events         VideoTaxonomyEvent[]
+
+  @@unique([name])
+  @@index([normalizedName])
+}
+
+model VideoTag {
+  id             String               @id @default(uuid())
+  name           String
+  normalizedName String               @unique
+  categoryId     String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  category       VideoCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  videos         VideoTagOnVideo[]
+  events         VideoTaxonomyEvent[]
+
+  @@index([categoryId])
+}
+
+model VideoTagOnVideo {
+  videoId String
+  tagId   String
+  video   Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  tag     VideoTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([videoId, tagId])
+  @@index([tagId])
+}
+
+model VideoTaxonomyEvent {
+  id         String         @id @default(uuid())
+  type       String
+  country    String?
+  videoId    String?
+  categoryId String?
+  tagId      String?
+  createdAt  DateTime       @default(now())
+  video      Video?         @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  category   VideoCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tag        VideoTag?      @relation(fields: [tagId], references: [id], onDelete: SetNull)
+
+  @@index([type, createdAt])
+  @@index([country, createdAt])
+  @@index([categoryId, createdAt])
+  @@index([tagId, createdAt])
 }
 
 model VideoPlaylist {
@@ -396,4 +456,3 @@ model CourseEnrollment {
 
   @@unique([userId, courseId])
 }
-

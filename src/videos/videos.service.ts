@@ -15,6 +15,8 @@ const defaultInclude = {
     },
   },
   VideoPlaylist: { select: { id: true, name: true } },
+  videoCategory: true,
+  videoTags: { include: { tag: true } },
 };
 
 @Injectable()
@@ -48,6 +50,40 @@ export class VideosService {
     });
     if (!video) return null;
     return this.hydrateUrls(video);
+  }
+
+  async getTaxonomy(category?: string) {
+    const categories = await (this.prisma as any).videoCategory.findMany({ orderBy: { name: 'asc' } });
+    const selectedCategory = category?.trim().toLowerCase();
+    const tags = await (this.prisma as any).videoTag.findMany({
+      where: selectedCategory ? { category: { normalizedName: selectedCategory } } : undefined,
+      orderBy: { name: 'asc' },
+    });
+    return { categories, tags };
+  }
+
+  async findRecommendations(id: string, limit = 8) {
+    const source = await (this.prisma as any).video.findUnique({ where: { id }, include: defaultInclude });
+    if (!source) return [];
+    const candidates = await (this.prisma as any).video.findMany({
+      where: { isPublished: true, id: { not: id } },
+      include: defaultInclude,
+      take: 100,
+      orderBy: [{ views: 'desc' }, { likes: 'desc' }, { createdAt: 'desc' }],
+    });
+    const sourceTags = new Set((source.videoTags?.map((item: any) => item.tag.normalizedName) || source.tags || []).map((tag: string) => tag.toLowerCase()));
+    const sourceArtists = new Set((source.artists || []).map((artist: any) => artist.id));
+    const sourceCategory = source.videoCategory?.id || source.categoryId || source.category?.trim().toLowerCase();
+    const scored = candidates.map((candidate: any) => {
+      const candidateTags = candidate.videoTags?.map((item: any) => item.tag.normalizedName) || candidate.tags || [];
+      const commonTags = candidateTags.filter((tag: string) => sourceTags.has(tag.toLowerCase())).length;
+      const sameCategory = (candidate.videoCategory?.id || candidate.categoryId || candidate.category?.trim().toLowerCase()) === sourceCategory;
+      const sameArtist = candidate.artists?.some((artist: any) => sourceArtists.has(artist.id));
+      const popularity = Math.min(25, Math.log10(Math.max(1, candidate.views || 0)) * 10 + Math.log10(Math.max(1, candidate.likes || 0)) * 5);
+      const freshness = Math.max(0, 10 - Math.floor((Date.now() - new Date(candidate.createdAt).getTime()) / 86_400_000));
+      return { candidate, score: (sameCategory ? 100 : 0) + commonTags * 30 + (sameArtist ? 15 : 0) + popularity + freshness };
+    });
+    return Promise.all(scored.sort((left, right) => right.score - left.score).slice(0, Math.max(1, Math.min(limit, 20))).map(({ candidate }) => this.hydrateUrls(candidate)));
   }
 
   async findByArtist(artistId: string) {
@@ -120,14 +156,18 @@ export class VideosService {
       effectiveUserId = adminUser?.id;
     }
 
+    const taxonomy = await this.resolveTaxonomy(rest.category, tags);
     const data: any = {
       ...rest,
-      tags: Array.isArray(tags) ? tags : [],
+      category: taxonomy.categoryName,
+      categoryId: taxonomy.categoryId,
+      tags: taxonomy.tags.map((tag) => tag.name),
       thumbnailUrl: thumbnailUrl || null,
       userId: effectiveUserId || null,
       ...(finalArtistIds.length > 0
         ? { artists: { connect: finalArtistIds.map((id) => ({ id })) } }
         : {}),
+      ...(taxonomy.tags.length > 0 ? { videoTags: { create: taxonomy.tags.map((tag) => ({ tag: { connect: { id: tag.id } } })) } } : {}),
       ...(videoPlaylistIds && Array.isArray(videoPlaylistIds) && videoPlaylistIds.length > 0
         ? {
             VideoPlaylist: {
@@ -181,7 +221,7 @@ export class VideosService {
       throw new BadRequestException('duration must be > 0');
     }
 
-    const tags = Array.isArray(body?.tags) ? body.tags.filter(Boolean) : [];
+    const taxonomy = await this.resolveTaxonomy(body?.category, body?.tags);
     const genreId = typeof body?.genreId === 'string' ? body.genreId : undefined;
 
     const created = await (this.prisma as any).video.create({
@@ -192,8 +232,10 @@ export class VideosService {
         thumbnailUrl: thumbnailUrl || null,
         duration: Math.trunc(duration),
         isPublished: typeof body?.isPublished === 'boolean' ? body.isPublished : true,
-        category: typeof body?.category === 'string' ? body.category : null,
-        tags,
+        category: taxonomy.categoryName,
+        categoryId: taxonomy.categoryId,
+        tags: taxonomy.tags.map((tag) => tag.name),
+        ...(taxonomy.tags.length > 0 ? { videoTags: { create: taxonomy.tags.map((tag) => ({ tag: { connect: { id: tag.id } } })) } } : {}),
         userId,
         ...(genreId ? { genreId } : {}),
         artists: { connect: [{ id: artist.id }] },
@@ -243,8 +285,13 @@ export class VideosService {
     if (typeof videoUrl !== 'undefined') {
       data.videoUrl = videoUrl;
     }
-    if (typeof tags !== 'undefined') {
-      data.tags = Array.isArray(tags) ? tags : [];
+    if (typeof tags !== 'undefined' || typeof rest.category !== 'undefined') {
+      const current = await (this.prisma as any).video.findUnique({ where: { id }, select: { category: true, tags: true } });
+      const taxonomy = await this.resolveTaxonomy(typeof rest.category !== 'undefined' ? rest.category : current?.category, typeof tags !== 'undefined' ? tags : current?.tags);
+      data.category = taxonomy.categoryName;
+      data.categoryId = taxonomy.categoryId;
+      data.tags = taxonomy.tags.map((tag) => tag.name);
+      data.videoTags = { set: taxonomy.tags.map((tag) => ({ tagId: tag.id })) };
     }
 
     const effectiveArtistIds = Array.isArray(artistIds)
@@ -278,7 +325,7 @@ export class VideosService {
 
   async updateMetrics(
     id: string,
-    opts: { incrementViews?: boolean; likeDelta?: number },
+    opts: { incrementViews?: boolean; likeDelta?: number; country?: string },
   ) {
     const incViews = opts.incrementViews ? 1 : 0;
     const likeDelta =
@@ -305,6 +352,19 @@ export class VideosService {
       },
       include: defaultInclude,
     });
+
+    // Raw events are intentionally retained alongside counters so category/tag
+    // analytics can later be grouped by content, search origin and country.
+    if (incViews || likeDelta) {
+      const eventType = incViews ? 'VIEW' : 'LIKE';
+      const tagIds = update.videoTags?.map((item: any) => item.tagId).filter(Boolean) || [];
+      await (this.prisma as any).videoTaxonomyEvent.createMany({
+        data: [
+          { type: eventType, country: opts.country?.slice(0, 2).toUpperCase() || null, videoId: update.id, categoryId: update.categoryId || null },
+          ...tagIds.map((tagId: string) => ({ type: eventType, country: opts.country?.slice(0, 2).toUpperCase() || null, videoId: update.id, categoryId: update.categoryId || null, tagId })),
+        ],
+      }).catch(() => {});
+    }
 
     return this.hydrateUrls(update);
   }
@@ -395,7 +455,33 @@ export class VideosService {
         ? await this.refreshUrl(video.thumbnailUrl, 'images')
         : null,
       videoPlaylists: rawPlaylists,
+      category: video.videoCategory?.name || video.category,
+      tags: video.videoTags?.length ? video.videoTags.map((item: any) => item.tag.name) : video.tags || [],
     };
+  }
+
+  private async resolveTaxonomy(category: unknown, tags: unknown) {
+    const categoryName = typeof category === 'string' ? category.trim().replace(/\s+/g, ' ') : '';
+    const normalizedCategory = categoryName.toLocaleLowerCase();
+    const rawTags = Array.isArray(tags) ? tags : [];
+    const uniqueTags = [...new Map(rawTags.filter((tag): tag is string => typeof tag === 'string').map((tag) => [tag.trim().toLocaleLowerCase(), tag.trim().replace(/\s+/g, ' ')])).values()].filter(Boolean).slice(0, 20);
+    let categoryRecord: any = null;
+    if (categoryName) {
+      categoryRecord = await (this.prisma as any).videoCategory.upsert({
+        where: { normalizedName: normalizedCategory },
+        create: { name: categoryName, normalizedName: normalizedCategory },
+        update: {},
+      });
+    }
+    const tagRecords = await Promise.all(uniqueTags.map(async (name) => {
+      const normalizedName = name.toLocaleLowerCase();
+      return (this.prisma as any).videoTag.upsert({
+        where: { normalizedName },
+        create: { name, normalizedName, categoryId: categoryRecord?.id },
+        update: categoryRecord ? { categoryId: categoryRecord.id } : {},
+      });
+    }));
+    return { categoryName: categoryRecord?.name || null, categoryId: categoryRecord?.id || null, tags: tagRecords };
   }
 
   private refreshUrl(url: string | null | undefined, _bucket: 'videos' | 'images') {

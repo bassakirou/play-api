@@ -1,5 +1,6 @@
 import {
   ArrayMinSize,
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsInt,
@@ -47,6 +48,7 @@ export class CreateVideoDto {
 
   @ApiProperty({ required: false, type: [String] })
   @IsArray()
+  @ArrayMaxSize(20)
   @IsOptional()
   @IsString({ each: true })
   tags?: string[];
