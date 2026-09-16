@@ -472,9 +472,7 @@ export class LivesService {
       live.user?.name ||
       live.user?.email?.split('@')[0] ||
       'Pyramid Live';
-    const hostAvatar =
-      live.user?.artistProfile?.imageUrl ||
-      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop';
+    const hostAvatar = live.user?.artistProfile?.imageUrl || null;
 
     return {
       id: live.id,
@@ -519,7 +517,7 @@ export class LivesService {
         userAvatar:
           c.userAvatar ||
           c.user?.artistProfile?.imageUrl ||
-          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop',
+          null,
         role: c.role || 'USER',
         text: c.text,
         timestamp: c.createdAt,
