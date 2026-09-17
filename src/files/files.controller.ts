@@ -19,7 +19,7 @@ import { MinioService } from '../storage/minio.service';
 import { VercelBlobService } from '../storage/vercel-blob.service';
 import { HlsTranscoderService } from '../storage/hls-transcoder.service';
 import { MediaService } from '../media/media.service';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, createReadStream, createWriteStream, rmSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, createReadStream, createWriteStream, rmSync, statSync } from 'fs';
 import { Readable } from 'stream';
 
 async function streamToString(stream: any): Promise<string> {
@@ -958,8 +958,32 @@ export class FilesController {
           const bucket = match[1];
           const objectName = match[2];
           try {
-            const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
-            console.log(`[resolvedAudio] ✓ getObjectStream succeeded for bucket="${bucket}", object="${objectName}"`);
+            // Check Range header for HTTP 206 Partial Content (critical for mobile streaming)
+            const rangeHeader = req.headers.range;
+            let rangeOpts: { offset?: number; length?: number } | undefined;
+            let isPartial = false;
+            let start = 0;
+            let end = 0;
+
+            if (rangeHeader && !objectName.endsWith('.m3u8')) {
+              try {
+                const statCheck = await this.minio['client']?.statObject(bucket, objectName).catch(() => null);
+                if (statCheck?.size) {
+                  const parts = rangeHeader.replace(/bytes=/, '').split('-');
+                  start = parseInt(parts[0], 10);
+                  end = parts[1] ? parseInt(parts[1], 10) : statCheck.size - 1;
+                  if (!isNaN(start) && !isNaN(end) && start <= end) {
+                    isPartial = true;
+                    rangeOpts = { offset: start, length: end - start + 1 };
+                  }
+                }
+              } catch {
+                // fallback to regular getObject
+              }
+            }
+
+            const { stream, stat } = await this.minio.getObjectStream(bucket, objectName, rangeOpts);
+            console.log(`[resolvedAudio] ✓ getObjectStream succeeded for bucket="${bucket}", object="${objectName}" isPartial=${isPartial}`);
             if (objectName.endsWith('.m3u8')) {
               const text = await streamToString(stream);
               const baseDirUrl = url.substring(0, url.lastIndexOf('/') + 1);
@@ -991,11 +1015,21 @@ export class FilesController {
             } else if (objectName.endsWith('.mp3')) {
               res.setHeader('Content-Type', 'audio/mpeg');
             }
-            if (stat?.size) {
-              res.setHeader('Content-Length', stat.size);
-            }
+
             res.setHeader('Accept-Ranges', 'bytes');
-            res.status(200);
+
+            if (isPartial && stat?.size) {
+              const chunkSize = end - start + 1;
+              res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+              res.setHeader('Content-Length', chunkSize);
+              res.status(206);
+            } else {
+              if (stat?.size) {
+                res.setHeader('Content-Length', stat.size);
+              }
+              res.status(200);
+            }
+
             stream.pipe(res);
             return;
           } catch (err) {
@@ -1034,9 +1068,29 @@ export class FilesController {
             res.status(200).send(rewritten);
             return;
           }
+
           if (diskPath.endsWith('.mp3')) res.setHeader('Content-Type', 'audio/mpeg');
           else if (diskPath.endsWith('.ts')) res.setHeader('Content-Type', 'video/mp2t');
+
+          const stat = statSync(diskPath);
+          const rangeHeader = req.headers.range;
           res.setHeader('Accept-Ranges', 'bytes');
+
+          if (rangeHeader && stat?.size) {
+            const parts = rangeHeader.replace(/bytes=/, '').split('-');
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+            if (!isNaN(start) && !isNaN(end) && start <= end) {
+              const chunkSize = end - start + 1;
+              res.status(206);
+              res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+              res.setHeader('Content-Length', chunkSize);
+              createReadStream(diskPath, { start, end }).pipe(res);
+              return;
+            }
+          }
+
+          res.setHeader('Content-Length', stat.size);
           res.status(200);
           createReadStream(diskPath).pipe(res);
           return;

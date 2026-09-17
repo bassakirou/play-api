@@ -218,6 +218,7 @@ export class MinioService implements OnModuleInit {
   async getObjectStream(
     bucket: string,
     objectName: string,
+    range?: { offset?: number; length?: number },
   ): Promise<{ stream: any; stat?: any }> {
     if (!this.client) {
       throw new Error('MinIO not configured');
@@ -257,8 +258,11 @@ export class MinioService implements OnModuleInit {
         try {
           const stat = await this.client.statObject(b, obj);
           console.log(`[getObjectStream] statObject OK: bucket="${b}", object="${obj}", size=${stat?.size}`);
-          const stream = await this.client.getObject(b, obj);
-          console.log(`[getObjectStream] ✓ Streaming "${obj}" from bucket "${b}"`);
+          const stream =
+            range?.offset !== undefined
+              ? await this.client.getPartialObject(b, obj, range.offset, range.length)
+              : await this.client.getObject(b, obj);
+          console.log(`[getObjectStream] ✓ Streaming "${obj}" from bucket "${b}" (range: ${JSON.stringify(range || 'all')})`);
           return { stream, stat };
         } catch (err) {
           console.log(`[getObjectStream] ✗ bucket="${b}", object="${obj}" → ${err.code || err.message}`);

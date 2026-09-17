@@ -46,7 +46,11 @@ export class LivesService {
       where.type = query.type;
     }
     if (query?.status) {
-      where.status = query.status;
+      if (query.status !== 'all') {
+        where.status = query.status;
+      }
+    } else {
+      where.status = { not: 'ENDED' };
     }
     if (query?.search && query.search.trim()) {
       where.OR = [

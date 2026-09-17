@@ -34,6 +34,7 @@ model User {
   mediaAssets      MediaAsset[]
   lives            LiveStream[]    @relation("UserLives")
   liveComments     LiveComment[]
+  videoComments    VideoComment[]
   instructedCourses AcademicCourse[] @relation("InstructorCourses")
   enrollments       CourseEnrollment[]
 }
@@ -208,6 +209,32 @@ model Video {
   taxonomyEvents VideoTaxonomyEvent[]
   artists       Artist[]        @relation("VideoArtists")
   VideoPlaylist VideoPlaylist[] @relation("VideoPlaylistVideos")
+  comments      VideoComment[]
+}
+
+model VideoComment {
+  id            String         @id @default(uuid())
+  videoId       String
+  userId        String?
+  userName      String
+  userAvatar    String?
+  content       String         @db.Text
+  likes         Int            @default(0)
+  isCreator     Boolean        @default(false)
+  channelName   String?
+  channelAvatar String?
+  parentId      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  video         Video          @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  parent        VideoComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       VideoComment[] @relation("CommentReplies")
+
+  @@index([videoId, createdAt])
+  @@index([parentId])
+  @@index([userId])
 }
 
 model VideoCategory {

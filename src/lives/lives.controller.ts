@@ -63,7 +63,7 @@ export class LivesController {
   @Patch(':id/start')
   startLive(@Param('id') id: string, @Request() req: any) {
     const userId = req.user?.userId || req.user?.id || req.user?.sub;
-    const isAdmin = req.user?.role === 'ADMIN';
+    const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
     return this.livesService.startLive(id, userId, isAdmin);
   }
 
@@ -71,7 +71,7 @@ export class LivesController {
   @Patch(':id/end')
   endLive(@Param('id') id: string, @Request() req: any) {
     const userId = req.user?.userId || req.user?.id || req.user?.sub;
-    const isAdmin = req.user?.role === 'ADMIN';
+    const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
     return this.livesService.endLive(id, userId, isAdmin);
   }
 

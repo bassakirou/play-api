@@ -28,6 +28,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LivesModule } from './lives/lives.module';
 import { AcademicModule } from './academic/academic.module';
+import { VideoCommentsModule } from './video-comments/video-comments.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { AcademicModule } from './academic/academic.module';
     MediaModule,
     LivesModule,
     AcademicModule,
+    VideoCommentsModule,
   ],
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],
