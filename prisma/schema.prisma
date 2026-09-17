@@ -487,3 +487,20 @@ model CourseEnrollment {
 
   @@unique([userId, courseId])
 }
+
+model SharePlatform {
+  id                 String   @id @default(uuid())
+  key                String   @unique
+  name               String
+  icon               String
+  shareUrl           String
+  enabled            Boolean  @default(true)
+  order              Int      @default(0)
+  color              String?
+  includeTitle       Boolean  @default(true)
+  includeAuthor      Boolean  @default(true)
+  includeDescription Boolean  @default(false)
+  defaultHashtags    String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}

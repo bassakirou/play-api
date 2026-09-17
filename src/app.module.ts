@@ -29,6 +29,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { LivesModule } from './lives/lives.module';
 import { AcademicModule } from './academic/academic.module';
 import { VideoCommentsModule } from './video-comments/video-comments.module';
+import { ShareSettingsModule } from './share-settings/share-settings.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { VideoCommentsModule } from './video-comments/video-comments.module';
     LivesModule,
     AcademicModule,
     VideoCommentsModule,
+    ShareSettingsModule,
   ],
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],
