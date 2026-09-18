@@ -193,6 +193,7 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody()
     data: {
+      clientMsgId?: string;
       liveId: string;
       userId?: string;
       userName?: string;
@@ -217,6 +218,7 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const formatted = {
         id: comment.id,
+        clientMsgId: data.clientMsgId,
         streamId: comment.liveId,
         userId: comment.userId,
         userName: comment.userName,
