@@ -11,6 +11,7 @@ import {
   ShareSettingsService,
   CreateSharePlatformDto,
   UpdateSharePlatformDto,
+  UpdateShareModalConfigDto,
 } from './share-settings.service';
 import { ApiTags } from '@nestjs/swagger';
 
@@ -25,6 +26,22 @@ export class ShareSettingsController {
   @Get()
   findActive() {
     return this.shareSettingsService.findActive();
+  }
+
+  /**
+   * Endpoint pour récupérer la configuration globale du modal de partage
+   */
+  @Get('config')
+  getModalConfig() {
+    return this.shareSettingsService.getModalConfig();
+  }
+
+  /**
+   * Endpoint pour mettre à jour la configuration globale du modal de partage
+   */
+  @Patch('config')
+  updateModalConfig(@Body() dto: UpdateShareModalConfigDto) {
+    return this.shareSettingsService.updateModalConfig(dto);
   }
 
   /**

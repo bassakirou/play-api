@@ -504,3 +504,11 @@ model SharePlatform {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
+
+model ShareModalConfig {
+  id                String   @id @default("default")
+  showMediaPreview  Boolean  @default(false)
+  showCustomization Boolean  @default(false)
+  updatedAt         DateTime @updatedAt
+}
+

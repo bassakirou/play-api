@@ -28,9 +28,63 @@ export interface UpdateSharePlatformDto {
   defaultHashtags?: string;
 }
 
+export interface UpdateShareModalConfigDto {
+  showMediaPreview?: boolean;
+  showCustomization?: boolean;
+}
+
 @Injectable()
 export class ShareSettingsService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Retourne la configuration globale du modal de partage (aperçu média, personnalisation)
+   */
+  async getModalConfig() {
+    try {
+      let config = await (this.prisma as any).shareModalConfig.findUnique({
+        where: { id: 'default' },
+      });
+      if (!config) {
+        config = await (this.prisma as any).shareModalConfig.create({
+          data: {
+            id: 'default',
+            showMediaPreview: false,
+            showCustomization: false,
+          },
+        });
+      }
+      return config;
+    } catch {
+      return {
+        id: 'default',
+        showMediaPreview: false,
+        showCustomization: false,
+      };
+    }
+  }
+
+  /**
+   * Met à jour la configuration globale du modal de partage
+   */
+  async updateModalConfig(dto: UpdateShareModalConfigDto) {
+    try {
+      return await (this.prisma as any).shareModalConfig.upsert({
+        where: { id: 'default' },
+        create: {
+          id: 'default',
+          showMediaPreview: dto.showMediaPreview ?? false,
+          showCustomization: dto.showCustomization ?? false,
+        },
+        update: {
+          ...(dto.showMediaPreview !== undefined && { showMediaPreview: dto.showMediaPreview }),
+          ...(dto.showCustomization !== undefined && { showCustomization: dto.showCustomization }),
+        },
+      });
+    } catch (e: any) {
+      throw new BadRequestException(`Impossible de mettre à jour la configuration du modal: ${e.message}`);
+    }
+  }
 
   /**
    * Retourne les plateformes activées pour le front public (triées par ordre)
