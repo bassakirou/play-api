@@ -306,6 +306,16 @@ export class MinioService implements OnModuleInit {
     return false;
   }
 
+  async removeObject(bucket: string, objectName: string): Promise<void> {
+    if (!this.client) return;
+    const bucketName = (this.cfg.buckets?.[bucket as any] as string) || bucket;
+    try {
+      await this.client.removeObject(bucketName, objectName);
+    } catch (e: any) {
+      console.warn(`[MinioService] removeObject error: ${e.message}`);
+    }
+  }
+
   refreshUrl(url: string | null | undefined): string | null {
     if (!url) return null;
     const isProduction =

@@ -285,4 +285,72 @@ export class MailService {
       console.error(`[MailService] Failed to deliver group accepted email to ${params.to}:`, err?.message || err);
     }
   }
+
+  async sendLivePrivateInvitation(params: {
+    to: string;
+    hostName: string;
+    liveTitle: string;
+    liveUrl: string;
+    scheduledAt?: Date | string | null;
+  }) {
+    const from = this.getFromAddress();
+    const dateFormatted = params.scheduledAt
+      ? new Date(params.scheduledAt).toLocaleString('fr-FR', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : 'En direct dès maintenant';
+
+    try {
+      await this.transporter.sendMail({
+        from,
+        to: params.to,
+        subject: `Invitation exclusive au Direct Privé : « ${params.liveTitle} »`,
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; color: #1e293b; background-color: #0f172a; border-radius: 16px; border: 1px solid rgba(245, 158, 11, 0.3);">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <span style="display: inline-block; padding: 6px 14px; border-radius: 9999px; background-color: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #ef4444; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;">
+                DIRECT PRIVÉ EXCLUSIF
+              </span>
+              <h1 style="color: #ffffff; font-size: 22px; font-weight: 800; margin: 16px 0 6px 0;">
+                Invitation Personnelle
+              </h1>
+              <p style="font-size: 14px; color: #94a3b8; margin: 0;">
+                <strong>${params.hostName}</strong> vous convie à un direct privé sur <strong>PyramidPlay</strong>.
+              </p>
+            </div>
+
+            <div style="background-color: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-bottom: 24px;">
+              <h2 style="color: #f59e0b; font-size: 17px; font-weight: 700; margin: 0 0 8px 0;">
+                ${params.liveTitle}
+              </h2>
+              <p style="font-size: 13px; color: #cbd5e1; margin: 0 0 12px 0;">
+                Date & Heure : <strong>${dateFormatted}</strong>
+              </p>
+              <p style="font-size: 12px; color: #94a3b8; margin: 0; line-height: 1.5;">
+                Ce direct n'est pas répertorié publiquement. Vous bénéficiez d'un accès sécurisé unique grâce à ce lien personnel.
+              </p>
+            </div>
+
+            <div style="text-align: center; margin-bottom: 24px;">
+              <a href="${params.liveUrl}" style="display: inline-block; background: linear-gradient(135deg, #ef4444 0%, #f59e0b 100%); color: #ffffff; font-weight: 800; font-size: 14px; text-decoration: none; padding: 14px 36px; border-radius: 9999px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);">
+                Rejoindre le Direct Privé
+              </a>
+            </div>
+
+            <div style="border-top: 1px solid #334155; padding-top: 16px; font-size: 11px; color: #64748b; text-align: center; line-height: 1.5;">
+              <p style="margin: 0 0 6px 0;">Ce lien d'accès est strictement confidentiel et contient votre signature unique.</p>
+              <p style="margin: 0;">Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br /><span style="color: #f59e0b; word-break: break-all;">${params.liveUrl}</span></p>
+            </div>
+          </div>
+        `,
+      });
+      console.log(`[MailService] Invitation au direct privé envoyée avec succès à ${params.to}`);
+    } catch (err: any) {
+      console.error(`[MailService] Échec de l'envoi de l'invitation à ${params.to}:`, err?.message || err);
+    }
+  }
 }

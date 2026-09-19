@@ -368,8 +368,13 @@ model LiveStream {
   isAcademic    Boolean        @default(false)
   streamKey     String         @unique @default(uuid())
   streamUrl     String?
-  playbackType  String         @default("WEBRTC") // "WEBRTC" | "HLS" | "AUDIO_STREAM" | "EXTERNAL"
-  thumbnailUrl  String?
+  playbackType      String         @default("WEBRTC") // "WEBRTC" | "HLS" | "AUDIO_STREAM" | "EXTERNAL"
+  aspectRatio       String?        @default("auto")   // "16:9" | "9:16" | "auto"
+  isPrivate         Boolean        @default(false)
+  privateAccessType String?        @default("link")   // "link" | "invite"
+  accessKey         String?        @default(uuid())
+  invitedEmails     String[]       @default([])
+  thumbnailUrl      String?
   coverUrl      String?
   tags          String[]       @default([])
   viewerCount   Int            @default(0)
@@ -510,5 +515,15 @@ model ShareModalConfig {
   showMediaPreview  Boolean  @default(false)
   showCustomization Boolean  @default(false)
   updatedAt         DateTime @updatedAt
+}
+
+model LiveSettingsConfig {
+  id                   String   @id @default("default")
+  maxDurationMinutes   Int      @default(60) // Durée max d'un live (minutes)
+  maxViewers           Int      @default(500) // Nombre max de spectateurs simultanés (0 = illimité)
+  enableRetention0Days Boolean  @default(true) // 0 jours (immédiat)
+  enableRetention3Days Boolean  @default(true) // 3 jours de replay
+  enableRetention7Days Boolean  @default(true) // 7 jours de replay
+  updatedAt            DateTime @updatedAt
 }
 

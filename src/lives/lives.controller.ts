@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   Controller,
   Get,
@@ -12,7 +10,10 @@ import {
   UseGuards,
   Request,
   ForbiddenException,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { LivesService } from './lives.service';
 import { CreateLiveDto, UpdateLiveDto, AddCommentDto, AddReactionDto } from './dto/live.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -36,8 +37,14 @@ export class LivesController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.livesService.findOne(id);
+  findOne(
+    @Param('id') id: string,
+    @Query('token') token?: string,
+    @Query('sig') sig?: string,
+    @Request() req?: any,
+  ) {
+    const userId = req?.user?.userId || req?.user?.id || req?.user?.sub;
+    return this.livesService.findOne(id, token, sig, userId);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -96,6 +103,27 @@ export class LivesController {
       return this.livesService.updateViewerCount(id, body.viewerCount);
     }
     return { ok: true };
+  }
+
+  @Post(':id/like')
+  toggleLike(
+    @Param('id') id: string,
+    @Body() body: { liked: boolean },
+  ) {
+    return this.livesService.toggleLike(id, body.liked);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/recording')
+  @UseInterceptors(FileInterceptor('video'))
+  uploadRecording(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: any,
+  ) {
+    const userId = req.user?.userId || req.user?.id || req.user?.sub;
+    const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+    return this.livesService.uploadRecording(id, file, userId, isAdmin);
   }
 
   @UseGuards(JwtAuthGuard)

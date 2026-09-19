@@ -57,6 +57,22 @@ export class CreateLiveDto {
   @IsOptional()
   @IsBoolean()
   isAcademic?: boolean;
+
+  @IsOptional()
+  @IsString()
+  aspectRatio?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isPrivate?: boolean;
+
+  @IsOptional()
+  @IsEnum(['link', 'invite'])
+  privateAccessType?: 'link' | 'invite';
+
+  @IsOptional()
+  @IsArray()
+  invitedEmails?: string[];
 }
 
 export class UpdateLiveDto {
@@ -120,6 +136,22 @@ export class UpdateLiveDto {
   @IsOptional()
   @IsBoolean()
   isAcademic?: boolean;
+
+  @IsOptional()
+  @IsString()
+  aspectRatio?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isPrivate?: boolean;
+
+  @IsOptional()
+  @IsEnum(['link', 'invite'])
+  privateAccessType?: 'link' | 'invite';
+
+  @IsOptional()
+  @IsArray()
+  invitedEmails?: string[];
 }
 
 export class AddCommentDto {

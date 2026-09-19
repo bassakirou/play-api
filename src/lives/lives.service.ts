@@ -10,6 +10,11 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLiveDto, UpdateLiveDto, AddCommentDto } from './dto/live.dto';
 import { MinioService } from '../storage/minio.service';
+import { HlsTranscoderService } from '../storage/hls-transcoder.service';
+import { MailService } from '../mail/mail.service';
+import { randomUUID, createHmac } from 'crypto';
+import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 @Injectable()
 export class LivesService {
@@ -18,7 +23,17 @@ export class LivesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly minioService: MinioService,
+    private readonly hlsTranscoder: HlsTranscoderService,
+    private readonly mailService: MailService,
   ) {}
+
+  private generateEmailSignature(email: string, accessKey: string): string {
+    const secret = process.env.JWT_SECRET || 'pyramidplay-live-private-secret';
+    return createHmac('sha256', secret)
+      .update(`${email.toLowerCase().trim()}:${accessKey}`)
+      .digest('hex')
+      .substring(0, 16);
+  }
 
   async findAll(query?: {
     category?: string;
@@ -26,8 +41,11 @@ export class LivesService {
     status?: string;
     search?: string;
     isAcademic?: boolean;
+    userId?: string;
   }) {
-    const where: any = {};
+    const where: any = {
+      isPrivate: false, // Ne JAMAIS afficher les lives privés dans le catalogue public
+    };
 
     if (query?.category && query.category !== 'all') {
       if (query.category === 'academic') {
@@ -96,7 +114,7 @@ export class LivesService {
     return lives.map((live) => this.formatLiveItem(live));
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, token?: string, sig?: string, userId?: string) {
     const live = await this.prisma.liveStream.findUnique({
       where: { id },
       include: {
@@ -143,7 +161,27 @@ export class LivesService {
       throw new NotFoundException('Session Live non trouvée.');
     }
 
-    return this.formatLiveDetail(live);
+    // Vérification de confidentialité pour les directs privés
+    if (live.isPrivate) {
+      const isOwner = userId && (live.userId === userId);
+      const isTokenValid = Boolean(token && live.accessKey && token === live.accessKey);
+
+      if (!isOwner && !isTokenValid) {
+        throw new ForbiddenException(
+          'Ce direct est privé. Veuillez utiliser le lien d\'accès ou l\'invitation qui vous a été transmise.',
+        );
+      }
+    }
+
+    const formatted = this.formatLiveDetail(live);
+    // Renvoyer l'accessKey et invitedEmails pour le créateur ou si autorisé
+    return {
+      ...formatted,
+      isPrivate: live.isPrivate,
+      privateAccessType: live.privateAccessType,
+      accessKey: (live.userId === userId || token === live.accessKey) ? live.accessKey : undefined,
+      invitedEmails: live.userId === userId ? live.invitedEmails : undefined,
+    };
   }
 
   async create(userId: string, dto: CreateLiveDto) {
@@ -206,6 +244,14 @@ export class LivesService {
       user.artistProfile?.imageUrl ||
       'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200&h=675&fit=crop';
 
+    const isPrivate = Boolean(dto.isPrivate);
+    const privateAccessType = isPrivate ? (dto.privateAccessType || 'link') : null;
+    const accessKey = isPrivate ? randomUUID().replace(/-/g, '') : null;
+    const rawEmails = Array.isArray(dto.invitedEmails) ? dto.invitedEmails : [];
+    const invitedEmails = isPrivate && privateAccessType === 'invite'
+      ? rawEmails.map((e) => e.toLowerCase().trim()).filter((e) => Boolean(e) && e.includes('@'))
+      : [];
+
     const created = await this.prisma.liveStream.create({
       data: {
         title: dto.title.trim(),
@@ -217,6 +263,7 @@ export class LivesService {
         startedAt: startedDate,
         streamUrl: dto.streamUrl || null,
         playbackType: dto.playbackType || 'WEBRTC',
+        aspectRatio: dto.aspectRatio || 'auto',
         thumbnailUrl: dto.thumbnailUrl || defaultThumb,
         coverUrl: dto.coverUrl || user.artistProfile?.imageUrl || null,
         tags: dto.tags || ['Live', 'PyramidPlay'],
@@ -224,6 +271,10 @@ export class LivesService {
         cleanupAt,
         isFeatured: dto.isFeatured || false,
         isAcademic: Boolean(dto.isAcademic) || dto.category === 'academic',
+        isPrivate,
+        privateAccessType,
+        accessKey,
+        invitedEmails,
         userId: user.id,
       },
       include: {
@@ -237,8 +288,34 @@ export class LivesService {
       },
     });
 
-    this.logger.log(`[LivesService] Nouveau live ${initialStatus}: ${created.id} par ${hostName}`);
-    return this.formatLiveItem(created);
+    this.logger.log(`[LivesService] Nouveau live ${initialStatus} (Privé: ${isPrivate}): ${created.id} par ${hostName}`);
+
+    // Si le live est privé avec invitation par email, envoyer les invitations avec signature unique
+    if (isPrivate && privateAccessType === 'invite' && invitedEmails.length > 0 && accessKey) {
+      const appUrl = (process.env.APP_WEB_URL || 'http://localhost:5173').replace(/\/+$/, '');
+      for (const email of invitedEmails) {
+        const sig = this.generateEmailSignature(email, accessKey);
+        const privateLiveUrl = `${appUrl}/live/watch/${created.id}?token=${accessKey}&sig=${sig}`;
+        this.mailService.sendLivePrivateInvitation({
+          to: email,
+          hostName,
+          liveTitle: created.title,
+          liveUrl: privateLiveUrl,
+          scheduledAt: created.scheduledAt ? created.scheduledAt.toISOString() : undefined,
+        }).catch((err) => {
+          this.logger.error(`[LivesService] Échec invitation mail à ${email}: ${err.message}`);
+        });
+      }
+    }
+
+    const formatted = this.formatLiveItem(created);
+    return {
+      ...formatted,
+      isPrivate: created.isPrivate,
+      privateAccessType: created.privateAccessType,
+      accessKey: created.accessKey,
+      invitedEmails: created.invitedEmails,
+    };
   }
 
   async update(id: string, userId: string, dto: UpdateLiveDto, isAdmin = false) {
@@ -305,11 +382,17 @@ export class LivesService {
       throw new ForbiddenException('Action non autorisée.');
     }
 
+    const newStatus = (live.retentionDays > 0 && live.recordingUrl) ? 'REPLAY' : 'ENDED';
+    const cleanupAt = live.retentionDays > 0
+      ? new Date(Date.now() + live.retentionDays * 24 * 60 * 60 * 1000)
+      : null;
+
     const ended = await this.prisma.liveStream.update({
       where: { id },
       data: {
-        status: 'ENDED',
+        status: newStatus,
         endedAt: new Date(),
+        cleanupAt,
       },
     });
 
@@ -320,6 +403,101 @@ export class LivesService {
     }
 
     return ended;
+  }
+
+  async toggleLike(id: string, liked: boolean) {
+    const live = await this.prisma.liveStream.findUnique({
+      where: { id },
+      select: { id: true, likesCount: true },
+    });
+    if (!live) throw new NotFoundException('Live introuvable.');
+
+    const newCount = liked ? live.likesCount + 1 : Math.max(0, live.likesCount - 1);
+    const updated = await this.prisma.liveStream.update({
+      where: { id },
+      data: { likesCount: newCount },
+      select: { id: true, likesCount: true },
+    });
+
+    return updated;
+  }
+
+  async uploadRecording(id: string, file: any, userId: string, isAdmin = false) {
+    const live = await this.prisma.liveStream.findUnique({ where: { id } });
+    if (!live) throw new NotFoundException('Live introuvable.');
+    if (live.userId !== userId && !isAdmin) {
+      throw new ForbiddenException('Action non autorisée.');
+    }
+    if (!file) throw new BadRequestException('Fichier vidéo manquant.');
+
+    let recordingUrl = '';
+    const tempDir = join(process.cwd(), 'uploads', 'temp_lives');
+    if (!existsSync(tempDir)) {
+      mkdirSync(tempDir, { recursive: true });
+    }
+
+    const tempInputFile = join(tempDir, `${id}_raw_${Date.now()}.webm`);
+
+    try {
+      // 1. Écrire le buffer temporaire sur le disque pour FFmpeg
+      writeFileSync(tempInputFile, file.buffer);
+
+      // 2. Transcoder vers HLS via HlsTranscoderService
+      this.logger.log(`[LivesService] Début du transcodage HLS pour le live ${id}...`);
+      const transcodeResult = await this.hlsTranscoder.generateVideoVariants({
+        inputPath: tempInputFile,
+        mediaId: `lives/${id}`,
+      });
+
+      recordingUrl = transcodeResult.masterUrl;
+      this.logger.log(`[LivesService] Replay HLS généré et uploadé dans MinIO pour ${id}: ${recordingUrl}`);
+    } catch (err: any) {
+      this.logger.warn(`[LivesService] Échec du transcodage HLS: ${err.message}. Repli sur upload direct webm...`);
+      // Fallback: upload direct MinIO .webm si ffmpeg échoue
+      const filename = `lives/recordings/${id}_${Date.now()}.webm`;
+      try {
+        recordingUrl = await this.minioService.upload({
+          bucket: 'videos',
+          objectName: filename,
+          buffer: file.buffer,
+          contentType: file.mimetype || 'video/webm',
+        });
+      } catch (uploadErr: any) {
+        this.logger.error(`[LivesService] Échec upload direct MinIO : ${uploadErr.message}`);
+        recordingUrl = `/media/${filename}`;
+      }
+    } finally {
+      // Nettoyage du fichier brut temporaire
+      if (existsSync(tempInputFile)) {
+        try {
+          unlinkSync(tempInputFile);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    const newStatus = live.retentionDays > 0 ? 'REPLAY' : live.status;
+    const cleanupAt = live.retentionDays > 0
+      ? new Date(Date.now() + live.retentionDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    const isHls = recordingUrl.includes('.m3u8');
+
+    const updated = await this.prisma.liveStream.update({
+      where: { id },
+      data: {
+        recordingUrl,
+        streamUrl: recordingUrl,
+        playbackType: isHls ? 'HLS' : live.playbackType,
+        isRecorded: true,
+        status: newStatus,
+        cleanupAt,
+      },
+    });
+
+    this.logger.log(`[LivesService] Enregistrement sauvegardé pour le live ${id}: ${recordingUrl} (playback: ${isHls ? 'HLS' : live.playbackType})`);
+    return this.formatLiveItem(updated);
   }
 
   async addComment(liveId: string, userId: string | null, dto: AddCommentDto) {
@@ -459,11 +637,15 @@ export class LivesService {
   }
 
   private async deleteLiveRecordings(live: any) {
-    // Si des enregistrements sont hébergés sur MinIO, on peut les nettoyer
     if (live.recordingUrl) {
       try {
         this.logger.log(`[LivesService] Suppression de l'enregistrement: ${live.recordingUrl}`);
-        // MinIO deletion logic si applicable
+        const parts = live.recordingUrl.split('/');
+        const videoIdx = parts.findIndex((p: string) => p === 'videos' || p === 'play-videos');
+        const objectName = videoIdx !== -1 ? parts.slice(videoIdx + 1).join('/') : '';
+        if (objectName) {
+          await this.minioService.removeObject('videos', objectName);
+        }
       } catch (err: any) {
         this.logger.warn(`[LivesService] Echec suppression recording: ${err.message}`);
       }
@@ -485,6 +667,9 @@ export class LivesService {
       type: live.type || 'video',
       category: live.category || 'all',
       status: live.status,
+      aspectRatio: live.aspectRatio || 'auto',
+      recordingUrl: live.recordingUrl || null,
+      isRecorded: Boolean(live.isRecorded || live.recordingUrl),
       streamUrl: live.streamUrl || '',
       playbackType: live.playbackType,
       thumbnailUrl: live.thumbnailUrl || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200&h=675&fit=crop',
@@ -498,6 +683,8 @@ export class LivesService {
       likesCount: live.likesCount || 0,
       isFeatured: live.isFeatured || false,
       isAcademic: Boolean(live.isAcademic || live.category === 'academic'),
+      isPrivate: Boolean(live.isPrivate),
+      privateAccessType: live.privateAccessType || null,
       scheduledAt: live.scheduledAt,
       startedAt: live.startedAt || live.createdAt,
       endedAt: live.endedAt,

@@ -10,6 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { LivesService } from './lives.service';
+import { LiveSettingsService } from './live-settings.service';
 
 @WebSocketGateway({
   cors: {
@@ -31,7 +32,10 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Map liveId -> host socket ID
   private roomHosts: Map<string, string> = new Map();
 
-  constructor(private readonly livesService: LivesService) {}
+  constructor(
+    private readonly livesService: LivesService,
+    private readonly liveSettingsService: LiveSettingsService,
+  ) {}
 
   handleConnection(client: Socket) {
     this.logger.log(`[LivesGateway] Client connecté: ${client.id}`);
@@ -74,10 +78,24 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('join_live')
   async handleJoinLive(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { liveId: string; user?: any; isHost?: boolean },
+    @MessageBody() data: { liveId: string; user?: any; isHost?: boolean; token?: string },
   ) {
-    const { liveId, isHost } = data;
+    const { liveId, isHost, token } = data;
     if (!liveId) return;
+
+    // Vérifier l'accès pour les lives privés
+    try {
+      const live = await this.livesService.findOne(liveId, token, undefined, data.user?.id);
+      if (!live) {
+        client.emit('live:error', { message: 'Session Live introuvable.' });
+        return;
+      }
+    } catch (err: any) {
+      client.emit('live:error', {
+        message: err?.message || 'Accès refusé. Ce direct est privé.',
+      });
+      return;
+    }
 
     // Leave previous room if any
     const prevRoom = this.socketToRoom.get(client.id);
@@ -117,7 +135,20 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    // Viewer joined
+    // Viewer joined: check max viewers limit from config
+    try {
+      const config = await this.liveSettingsService.getConfig();
+      const currentCount = this.roomViewers.get(liveId)?.size || 0;
+      if (config.maxViewers > 0 && currentCount >= config.maxViewers) {
+        client.emit('live:limit_reached', {
+          message: `Limite maximale de spectateurs atteinte (${config.maxViewers}).`,
+        });
+        return;
+      }
+    } catch {
+      // Continue if config check fails
+    }
+
     if (!this.roomViewers.has(liveId)) {
       this.roomViewers.set(liveId, new Set());
     }
@@ -205,6 +236,14 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!data.liveId || !data.text) return;
 
     try {
+      const live = await this.livesService.findOne(data.liveId).catch(() => null);
+      if (live && (live.status === 'ENDED' || live.status === 'REPLAY')) {
+        client.emit('live:comment_error', {
+          message: 'La diffusion est terminée. Les commentaires sont fermés.',
+        });
+        return;
+      }
+
       const comment = await this.livesService.addComment(
         data.liveId,
         data.userId || null,
@@ -235,19 +274,41 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('send_like')
+  async handleSendLike(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { liveId: string; liked: boolean },
+  ) {
+    if (!data.liveId) return;
+    try {
+      const result = await this.livesService.toggleLike(data.liveId, data.liked);
+      this.server.to(`live_${data.liveId}`).emit('live:likes_count', {
+        liveId: data.liveId,
+        likesCount: result.likesCount,
+      });
+    } catch (err: any) {
+      this.logger.error(`[LivesGateway] Erreur send_like: ${err.message}`);
+    }
+  }
+
   @SubscribeMessage('send_reaction')
   async handleSendReaction(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { liveId: string; emoji: string },
+    @MessageBody()
+    data: {
+      liveId: string;
+      emoji: string;
+      reactionId?: number | string;
+    },
   ) {
     if (!data.liveId || !data.emoji) return;
 
     try {
       await this.livesService.addReaction(data.liveId, data.emoji);
 
-      // Broadcast burst animation trigger
-      this.server.to(`live_${data.liveId}`).emit('live:new_reaction', {
-        id: Date.now() + Math.random(),
+      // Diffuse l'animation aux AUTRES clients de la pièce (l'émetteur l'a déjà affichée instantanément en optimiste)
+      client.to(`live_${data.liveId}`).emit('live:new_reaction', {
+        id: data.reactionId || Date.now() + Math.random(),
         emoji: data.emoji,
         senderSocketId: client.id,
       });
