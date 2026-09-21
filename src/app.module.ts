@@ -30,6 +30,8 @@ import { LivesModule } from './lives/lives.module';
 import { AcademicModule } from './academic/academic.module';
 import { VideoCommentsModule } from './video-comments/video-comments.module';
 import { ShareSettingsModule } from './share-settings/share-settings.module';
+import { TaraModule } from './tara/tara.module';
+import { MonetizationModule } from './monetization/monetization.module';
 
 @Module({
   imports: [
@@ -63,6 +65,8 @@ import { ShareSettingsModule } from './share-settings/share-settings.module';
     AcademicModule,
     VideoCommentsModule,
     ShareSettingsModule,
+    TaraModule,
+    MonetizationModule,
   ],
   controllers: [AppController, HealthController, FilesController],
   providers: [AppService],

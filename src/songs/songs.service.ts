@@ -150,6 +150,9 @@ export class SongsService {
       audioUrl,
       isSingle,
       isAcademic: Boolean(dto.isAcademic),
+      isMonetized: Boolean(dto.isMonetized),
+      price: dto.price ? Math.max(0, Math.round(Number(dto.price))) : 0,
+      discountPrice: dto.discountPrice ? Math.max(0, Math.round(Number(dto.discountPrice))) : null,
       coverUrl: coverUrl || null,
       ...(primaryGenreId ? { genre: { connect: { id: primaryGenreId } } } : {}),
       ...(finalGenreIds.length > 0
@@ -203,6 +206,15 @@ export class SongsService {
     }
     if (typeof updateSongDto?.isAcademic !== 'undefined') {
       updateData.isAcademic = Boolean(updateSongDto.isAcademic);
+    }
+    if (typeof updateSongDto?.isMonetized !== 'undefined') {
+      updateData.isMonetized = Boolean(updateSongDto.isMonetized);
+    }
+    if (typeof updateSongDto?.price !== 'undefined') {
+      updateData.price = Math.max(0, Math.round(Number(updateSongDto.price)));
+    }
+    if (typeof updateSongDto?.discountPrice !== 'undefined') {
+      updateData.discountPrice = updateSongDto.discountPrice ? Math.max(0, Math.round(Number(updateSongDto.discountPrice))) : null;
     }
 
     if (isSingle) {

@@ -37,6 +37,11 @@ model User {
   videoComments    VideoComment[]
   instructedCourses AcademicCourse[] @relation("InstructorCourses")
   enrollments       CourseEnrollment[]
+  transactions      Transaction[]          @relation("UserTransactions")
+  purchasedContents UserPurchasedContent[] @relation("UserPurchases")
+  sentGifts         GiftTransaction[]      @relation("SentGifts")
+  subscriptions     UserSubscription[]     @relation("UserSubscriptions")
+  withdrawals       WithdrawalRequest[]    @relation("UserWithdrawals")
 }
 
 model Role {
@@ -79,6 +84,8 @@ model Artist {
   songs            Song[]                  @relation("SongArtists")
   followers        User[]                  @relation("UserFollowsArtist")
   videos           Video[]                 @relation("VideoArtists")
+  receivedGifts    GiftTransaction[]       @relation("ArtistReceivedGifts")
+  withdrawals      WithdrawalRequest[]     @relation("ArtistWithdrawals")
 }
 
 model ArtistGroup {
@@ -115,6 +122,9 @@ model Album {
   coverUrl    String?
   description String?
   isAcademic  Boolean       @default(false)
+  isMonetized Boolean       @default(false)
+  price       Int           @default(0) // en XAF
+  discountPrice Int?        // en XAF (optionnel)
   artistId    String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -130,6 +140,9 @@ model Song {
   coverUrl    String?
   isSingle    Boolean       @default(false)
   isAcademic  Boolean       @default(false)
+  isMonetized Boolean       @default(false)
+  price       Int           @default(0) // en XAF
+  discountPrice Int?        // en XAF (optionnel)
   audioUrl    String
   albumId     String?
   genreId     String?
@@ -195,6 +208,9 @@ model Video {
   likes         Int             @default(0)
   isPublished   Boolean         @default(false)
   isAcademic    Boolean         @default(false)
+  isMonetized   Boolean         @default(false)
+  price         Int             @default(0) // en XAF
+  discountPrice Int?            // en XAF (optionnel)
   category      String?
   tags          String[]        @default([])
   categoryId    String?
@@ -318,6 +334,9 @@ model Audiobook {
   totalReviews Int                @default(0)
   isTrending   Boolean            @default(false)
   isNew        Boolean            @default(true)
+  isMonetized  Boolean            @default(false)
+  price        Int                @default(0) // en XAF
+  discountPrice Int?              // en XAF (optionnel)
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   authorUser   User?              @relation("UserAudiobooks", fields: [authorId], references: [id], onDelete: SetNull)
@@ -526,4 +545,169 @@ model LiveSettingsConfig {
   enableRetention7Days Boolean  @default(true) // 7 jours de replay
   updatedAt            DateTime @updatedAt
 }
+
+// ==========================================
+// MODULE MONÉTISATION & PAIEMENTS TARA MONEY
+// ==========================================
+
+model MonetizationConfig {
+  id                 String   @id @default("default")
+  // Clés et credentials Tara Money (stockés de façon sécurisée)
+  taraApiKey         String?  // Clé fournie par Tara
+  taraBusinessId     String?  // Business ID Tara
+  taraWebhookSecret  String?  // Secret Webhook (facultatif / configuré)
+  taraBaseUrl        String?  @default("https://www.dklo.co/api/tara") // Base URL de l'API Tara
+  taraReturnUrl      String?  // URL de redirection après paiement (ex: https://play.pyramidplay.cm)
+  taraWebhookUrl     String?  // URL du Webhook de notification (ex: Ngrok en local ou URL prod)
+  isLiveMode         Boolean  @default(false) // Sandbox vs Production
+
+  // Commissions de la plateforme
+  platformFeePercent Float    @default(30.0) // 30% PyramidPlay
+  creatorSharePercent Float   @default(70.0) // 70% Créateurs / Auteurs
+
+  // Frais et seuils de retrait
+  minWithdrawalAmount Int     @default(5000) // Seuil min de réclamation en XAF
+  operatorOmFeePercent Float  @default(1.5)  // Frais de transfert OM déduits au créateur (%)
+  operatorMomoFeePercent Float @default(1.5) // Frais de transfert MoMo déduits au créateur (%)
+  
+  updatedAt          DateTime @updatedAt
+}
+
+model GiftCatalog {
+  id          String            @id @default(uuid())
+  name        String            @unique // ex: "LION", "TORTUE", "CAURIS", "ELEPHANT", "PANTHERE"
+  label       String            // ex: "Le Lion Royal", "La Tortue Sage", "Le Cauris Sacré"
+  amount      Int               // Montant en XAF (ex: 100000, 5000, 500)
+  iconUrl     String            // URL MinIO / Cloud de l'icône (PNG, SVG, GIF)
+  description String?           // Description symbolique inspirée de la cosmogonie africaine
+  order       Int               @default(0)
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  giftsSent   GiftTransaction[]
+}
+
+model SubscriptionPlan {
+  id            String             @id @default(uuid())
+  name          String             // ex: "Plan Formateur & Créateur Académique"
+  code          String             @unique // ex: "ACADEMIC_MONTHLY"
+  targetRole    String             @default("ACADEMIC") // Rôle visé
+  price         Int                @default(5000) // 5000 XAF par mois
+  durationDays  Int                @default(30)
+  description   String?
+  features      String[]           @default([])
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  subscriptions UserSubscription[]
+}
+
+model UserSubscription {
+  id         String           @id @default(uuid())
+  userId     String
+  planId     String
+  status     String           @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED
+  startDate  DateTime         @default(now())
+  endDate    DateTime
+  paymentId  String?          // Référence Tara
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  user       User             @relation("UserSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+  plan       SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model Transaction {
+  id                  String            @id @default(uuid())
+  paymentId           String?           @unique // Identifiant unique renvoyé par Tara Money
+  productId           String            // Référence unique générée pour l'appel Tara
+  userId              String?           // Utilisateur qui a payé
+  type                String            // "CONTENT_PURCHASE" | "GIFT" | "ACADEMIC_SUBSCRIPTION"
+  amount              Int               // Montant total payé en XAF
+  currency            String            @default("XAF")
+  platformFee         Int               @default(0) // Part 30% PyramidPlay
+  creatorShare        Int               @default(0) // Part 70% Créateur / Artiste
+  taraFee             Int               @default(0) // Frais Tara
+  status              String            @default("PENDING") // PENDING, SUCCESS, FAILURE
+  vendor              String?           // "ORANGE_CMR" | "MTN_MOMO_CMR"
+  phoneNumber         String?           // Format 2376xxxxxxxx
+  beneficiaryArtistId String?           // Artiste / Créateur bénéficiaire du produit ou cadeau
+  contentId           String?           // ID du Single, Album, Video ou Audiobook
+  contentType         String?           // "SONG" | "ALBUM" | "VIDEO" | "AUDIOBOOK"
+  metadata            Json?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  user                User?             @relation("UserTransactions", fields: [userId], references: [id], onDelete: SetNull)
+  giftTransaction     GiftTransaction?
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([beneficiaryArtistId])
+  @@index([productId])
+}
+
+model UserPurchasedContent {
+  id          String   @id @default(uuid())
+  userId      String
+  contentId   String   // ID du Single, Album, Video ou Audiobook
+  contentType String   // "SONG" | "ALBUM" | "VIDEO" | "AUDIOBOOK"
+  title       String?  // Snapshot du titre au moment de l'achat
+  pricePaid   Int      // Montant payé en XAF
+  paymentId   String?  // Tara paymentId
+  createdAt   DateTime @default(now())
+
+  user        User     @relation("UserPurchases", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contentId, contentType])
+  @@index([userId])
+  @@index([contentId])
+}
+
+model GiftTransaction {
+  id            String       @id @default(uuid())
+  transactionId String       @unique
+  giftCatalogId String
+  senderUserId  String?
+  recipientArtistId String
+  message       String?
+  createdAt     DateTime     @default(now())
+
+  transaction   Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  gift          GiftCatalog  @relation(fields: [giftCatalogId], references: [id], onDelete: Cascade)
+  sender        User?        @relation("SentGifts", fields: [senderUserId], references: [id], onDelete: SetNull)
+  recipient     Artist       @relation("ArtistReceivedGifts", fields: [recipientArtistId], references: [id], onDelete: Cascade)
+
+  @@index([recipientArtistId])
+  @@index([senderUserId])
+}
+
+model WithdrawalRequest {
+  id              String    @id @default(uuid())
+  userId          String    // Utilisateur créateur demandeur
+  artistId        String    // Artiste associé
+  amountRequested Int       // Montant brut demandé (ses 70% cumulés)
+  operatorFees    Int       // Frais de transfert OM/MoMo supportés par le bénéficiaire
+  netAmount       Int       // Montant net effectivement versé au créateur
+  paymentMethod   String    // "MTN_MOBILE_MONEY" | "ORANGE_MONEY"
+  phoneNumber     String    // 2376xxxxxxxx
+  status          String    @default("PENDING") // PENDING, APPROVED, PROCESSING, PAID, REJECTED
+  rejectionReason String?
+  payoutId        String?   // ID du Payout Tara Money
+  processedById   String?   // Super Admin qui a traité
+  requestedAt     DateTime  @default(now())
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation("UserWithdrawals", fields: [userId], references: [id], onDelete: Cascade)
+  artist          Artist    @relation("ArtistWithdrawals", fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@index([artistId])
+  @@index([status])
+  @@index([userId])
+}
+
 

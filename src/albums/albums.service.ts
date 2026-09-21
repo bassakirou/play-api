@@ -11,7 +11,7 @@ export class AlbumsService {
   ) {}
 
   async create(createAlbumDto: CreateAlbumDto) {
-    const { title, year, coverUrl, description, artistId, artistIds, groupIds, isAcademic } = createAlbumDto as any;
+    const { title, year, coverUrl, description, artistId, artistIds, groupIds, isAcademic, isMonetized, price, discountPrice } = createAlbumDto as any;
     const finalArtistId = artistId || (artistIds && artistIds.length ? artistIds[0] : null);
     const data: any = {
       title,
@@ -19,6 +19,9 @@ export class AlbumsService {
       coverUrl: coverUrl || null,
       description: description || null,
       isAcademic: Boolean(isAcademic),
+      isMonetized: Boolean(isMonetized),
+      price: isMonetized && price !== null && price !== undefined ? Number(price) : null,
+      discountPrice: isMonetized && discountPrice !== null && discountPrice !== undefined ? Number(discountPrice) : null,
       ...(finalArtistId ? { artist: { connect: { id: finalArtistId } } } : {}),
       ...(groupIds && groupIds.length
         ? { groups: { connect: groupIds.map((gid: string) => ({ id: gid })) } }
@@ -98,6 +101,15 @@ export class AlbumsService {
     const data = { ...updateAlbumDto };
     if (typeof data.isAcademic !== 'undefined') {
       data.isAcademic = Boolean(data.isAcademic);
+    }
+    if (typeof data.isMonetized !== 'undefined') {
+      data.isMonetized = Boolean(data.isMonetized);
+    }
+    if (typeof data.price !== 'undefined') {
+      data.price = data.price !== null ? Number(data.price) : null;
+    }
+    if (typeof data.discountPrice !== 'undefined') {
+      data.discountPrice = data.discountPrice !== null ? Number(data.discountPrice) : null;
     }
     return this.prisma.album.update({
       where: { id },

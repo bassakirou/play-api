@@ -170,6 +170,9 @@ export class VideosService {
     const data: any = {
       ...rest,
       isAcademic: Boolean(dto.isAcademic),
+      isMonetized: Boolean(dto.isMonetized),
+      price: dto.isMonetized && dto.price ? Number(dto.price) : null,
+      discountPrice: dto.isMonetized && dto.discountPrice ? Number(dto.discountPrice) : null,
       category: taxonomy.categoryName,
       categoryId: taxonomy.categoryId,
       tags: taxonomy.tags.map((tag) => tag.name),
@@ -243,6 +246,9 @@ export class VideosService {
         thumbnailUrl: thumbnailUrl || null,
         duration: Math.trunc(duration),
         isAcademic: Boolean(body?.isAcademic),
+        isMonetized: Boolean(body?.isMonetized),
+        price: body?.isMonetized && body?.price ? Number(body.price) : null,
+        discountPrice: body?.isMonetized && body?.discountPrice ? Number(body.discountPrice) : null,
         isPublished: typeof body?.isPublished === 'boolean' ? body.isPublished : true,
         category: taxonomy.categoryName,
         categoryId: taxonomy.categoryId,
@@ -280,6 +286,15 @@ export class VideosService {
     const data: Record<string, any> = { ...rest };
     if (typeof rest.isAcademic !== 'undefined') {
       data.isAcademic = Boolean(rest.isAcademic);
+    }
+    if (typeof rest.isMonetized !== 'undefined') {
+      data.isMonetized = Boolean(rest.isMonetized);
+    }
+    if (typeof rest.price !== 'undefined') {
+      data.price = rest.price !== null ? Number(rest.price) : null;
+    }
+    if (typeof rest.discountPrice !== 'undefined') {
+      data.discountPrice = rest.discountPrice !== null ? Number(rest.discountPrice) : null;
     }
 
     if (channelId) {

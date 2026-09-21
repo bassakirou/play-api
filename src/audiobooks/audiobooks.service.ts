@@ -174,6 +174,9 @@ export class AudiobooksService {
         category: dto.category || 'Général',
         isTrending: dto.isTrending ?? false,
         rating: dto.rating ?? 5.0,
+        isMonetized: Boolean(dto.isMonetized),
+        price: dto.isMonetized && dto.price ? Number(dto.price) : 0,
+        discountPrice: dto.isMonetized && dto.discountPrice ? Number(dto.discountPrice) : null,
       },
     });
 
@@ -210,19 +213,31 @@ export class AudiobooksService {
   async update(id: string, dto: UpdateAudiobookDto) {
     await this.findOne(id);
 
+    const updateData: any = {
+      ...(dto.title !== undefined && { title: dto.title }),
+      ...(dto.author !== undefined && { author: dto.author }),
+      ...(dto.narrator !== undefined && { narrator: dto.narrator || null }),
+      ...(dto.description !== undefined && { description: dto.description || null }),
+      ...(dto.coverUrl !== undefined && { coverUrl: dto.coverUrl || null }),
+      ...(dto.category !== undefined && { category: dto.category || 'Général' }),
+      ...(dto.isTrending !== undefined && { isTrending: dto.isTrending }),
+      ...(dto.rating !== undefined && { rating: dto.rating }),
+      ...(dto.isMonetized !== undefined && { isMonetized: Boolean(dto.isMonetized) }),
+      ...(dto.price !== undefined && { price: dto.price !== null ? Number(dto.price) : 0 }),
+      ...(dto.discountPrice !== undefined && { discountPrice: dto.discountPrice !== null ? Number(dto.discountPrice) : null }),
+    };
+
+    if (dto.authorId !== undefined) {
+      if (dto.authorId) {
+        updateData.authorUser = { connect: { id: dto.authorId } };
+      } else {
+        updateData.authorUser = { disconnect: true };
+      }
+    }
+
     await this.prisma.audiobook.update({
       where: { id },
-      data: {
-        ...(dto.title !== undefined && { title: dto.title }),
-        ...(dto.author !== undefined && { author: dto.author }),
-        ...(dto.authorId !== undefined && { authorId: dto.authorId || null }),
-        ...(dto.narrator !== undefined && { narrator: dto.narrator || null }),
-        ...(dto.description !== undefined && { description: dto.description || null }),
-        ...(dto.coverUrl !== undefined && { coverUrl: dto.coverUrl || null }),
-        ...(dto.category !== undefined && { category: dto.category || 'Général' }),
-        ...(dto.isTrending !== undefined && { isTrending: dto.isTrending }),
-        ...(dto.rating !== undefined && { rating: dto.rating }),
-      },
+      data: updateData,
     });
 
     if (Array.isArray(dto.chapters)) {

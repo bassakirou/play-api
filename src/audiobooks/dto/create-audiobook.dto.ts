@@ -47,6 +47,21 @@ export class CreateAudiobookDto {
   @IsOptional()
   rating?: number;
 
+  @ApiPropertyOptional({ description: 'Indique si le livre audio est payant', default: false })
+  @IsBoolean()
+  @IsOptional()
+  isMonetized?: boolean;
+
+  @ApiPropertyOptional({ description: 'Prix standard en XAF' })
+  @IsNumber()
+  @IsOptional()
+  price?: number;
+
+  @ApiPropertyOptional({ description: 'Prix promotionnel en XAF' })
+  @IsNumber()
+  @IsOptional()
+  discountPrice?: number;
+
   @ApiPropertyOptional({ description: 'Liste des chapitres initiaux' })
   @IsOptional()
   chapters?: any[];
