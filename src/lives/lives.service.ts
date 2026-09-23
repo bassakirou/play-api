@@ -68,7 +68,8 @@ export class LivesService {
         where.status = query.status;
       }
     } else {
-      where.status = { not: 'ENDED' };
+      // Exclure les lives terminés, en replay, et les lives "zombies" (LIVE depuis >12h)
+      where.status = { notIn: ['ENDED', 'REPLAY'] };
     }
     if (query?.search && query.search.trim()) {
       where.OR = [
@@ -111,7 +112,16 @@ export class LivesService {
       },
     });
 
-    return lives.map((live) => this.formatLiveItem(live));
+    // Filtrer les lives "zombies" : statut LIVE mais créés depuis plus de 12h (hôte parti sans terminer)
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const activeLives = lives.filter((live) => {
+      if (live.status === 'LIVE' && live.startedAt && new Date(live.startedAt) < twelveHoursAgo) {
+        return false; // Exclure les zombies
+      }
+      return true;
+    });
+
+    return activeLives.map((live) => this.formatLiveItem(live));
   }
 
   async findOne(id: string, token?: string, sig?: string, userId?: string) {
@@ -605,6 +615,9 @@ export class LivesService {
    */
   async cleanupExpiredLives() {
     const now = new Date();
+    let totalCleaned = 0;
+
+    // 1. Purge des lives dont la rétention est expirée
     const expiredLives = await this.prisma.liveStream.findMany({
       where: {
         status: 'ENDED',
@@ -628,12 +641,44 @@ export class LivesService {
           data: { isCleanedUp: true, recordingUrl: null },
         });
         this.logger.log(`[LiveCleanup] Purge média réussie pour live ${live.id}`);
+        totalCleaned++;
       } catch (err: any) {
         this.logger.error(`[LiveCleanup] Erreur purge live ${live.id}: ${err.message}`);
       }
     }
 
-    return { cleanedCount: expiredLives.length };
+    // 2. Auto-terminer les lives "zombies" (statut LIVE depuis plus de 12h)
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const zombieLives = await this.prisma.liveStream.findMany({
+      where: {
+        status: 'LIVE',
+        startedAt: { lte: twelveHoursAgo },
+      },
+    });
+
+    if (zombieLives.length > 0) {
+      this.logger.log(
+        `[LiveCleanup] ${zombieLives.length} live(s) zombie(s) détecté(s) (LIVE > 12h). Terminaison automatique...`,
+      );
+    }
+
+    for (const zombie of zombieLives) {
+      try {
+        await this.prisma.liveStream.update({
+          where: { id: zombie.id },
+          data: {
+            status: 'ENDED',
+            endedAt: now,
+          },
+        });
+        this.logger.log(`[LiveCleanup] Live zombie ${zombie.id} ("${zombie.title}") terminé automatiquement.`);
+        totalCleaned++;
+      } catch (err: any) {
+        this.logger.error(`[LiveCleanup] Erreur terminaison zombie ${zombie.id}: ${err.message}`);
+      }
+    }
+
+    return { cleanedCount: totalCleaned };
   }
 
   private async deleteLiveRecordings(live: any) {
