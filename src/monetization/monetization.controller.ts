@@ -142,4 +142,9 @@ export class MonetizationController {
   async handleTaraWebhook(@Body() body: any) {
     return this.monetizationService.handleTaraWebhook(body);
   }
+
+  @Get('transaction/:id/status')
+  async getTransactionStatus(@Param('id') id: string) {
+    return this.monetizationService.getTransactionStatus(id);
+  }
 }

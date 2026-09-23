@@ -10,7 +10,7 @@ import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [PrismaModule, StorageModule],
-  controllers: [LivesController, LiveSettingsController],
+  controllers: [LiveSettingsController, LivesController],
   providers: [LivesService, LivesGateway, LiveCleanupService, LiveSettingsService],
   exports: [LivesService, LivesGateway, LiveSettingsService],
 })

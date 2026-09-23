@@ -768,4 +768,20 @@ export class MonetizationService implements OnModuleInit {
 
     return enriched;
   }
+
+  async getTransactionStatus(id: string) {
+    const tx = await this.prisma.transaction.findFirst({
+      where: {
+        OR: [{ id }, { productId: id }],
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction introuvable.');
+    return {
+      id: tx.id,
+      productId: tx.productId,
+      status: tx.status,
+      amount: tx.amount,
+      type: tx.type,
+    };
+  }
 }

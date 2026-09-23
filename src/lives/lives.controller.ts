@@ -18,9 +18,40 @@ import { LivesService } from './lives.service';
 import { CreateLiveDto, UpdateLiveDto, AddCommentDto, AddReactionDto } from './dto/live.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
+import { LiveSettingsService, UpdateLiveSettingsDto } from './live-settings.service';
+
 @Controller('lives')
 export class LivesController {
-  constructor(private readonly livesService: LivesService) {}
+  constructor(
+    private readonly livesService: LivesService,
+    private readonly liveSettingsService: LiveSettingsService,
+  ) {}
+
+  @Get('config')
+  getConfig() {
+    return this.liveSettingsService.getConfig();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('config')
+  updateConfig(@Request() req: any, @Body() dto: UpdateLiveSettingsDto) {
+    const role = (
+      typeof req.user?.role === 'object' ? req.user?.role?.name : req.user?.role || ''
+    ).toUpperCase();
+    const systemRoles = (req.user?.systemRoles || []).map((r: string) => r.toUpperCase());
+
+    const isAdmin =
+      role === 'ADMIN' ||
+      role === 'SUPER_ADMIN' ||
+      systemRoles.includes('ADMIN') ||
+      systemRoles.includes('SUPER_ADMIN');
+
+    if (!isAdmin) {
+      throw new ForbiddenException('Seuls les administrateurs peuvent modifier les paramètres des lives.');
+    }
+
+    return this.liveSettingsService.updateConfig(dto);
+  }
 
   @Get()
   findAll(
@@ -130,7 +161,15 @@ export class LivesController {
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: any) {
     const userId = req.user?.userId || req.user?.id || req.user?.sub;
-    const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+    const role = (
+      typeof req.user?.role === 'object' ? req.user?.role?.name : req.user?.role || ''
+    ).toUpperCase();
+    const systemRoles = (req.user?.systemRoles || []).map((r: string) => r.toUpperCase());
+    const isAdmin =
+      role === 'ADMIN' ||
+      role === 'SUPER_ADMIN' ||
+      systemRoles.includes('ADMIN') ||
+      systemRoles.includes('SUPER_ADMIN');
     return this.livesService.deleteLive(id, userId, isAdmin);
   }
 

@@ -592,7 +592,7 @@ export class LivesService {
   async deleteLive(id: string, userId: string, isAdmin = false) {
     const live = await this.prisma.liveStream.findUnique({ where: { id } });
     if (!live) throw new NotFoundException('Live non trouvé.');
-    if (live.userId !== userId && !isAdmin) {
+    if (live.userId && live.userId !== userId && !isAdmin) {
       throw new ForbiddenException('Action non autorisée.');
     }
 
