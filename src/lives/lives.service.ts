@@ -68,8 +68,8 @@ export class LivesService {
         where.status = query.status;
       }
     } else {
-      // Exclure les lives terminés, en replay, et les lives "zombies" (LIVE depuis >12h)
-      where.status = { notIn: ['ENDED', 'REPLAY'] };
+      // Exclure uniquement les lives terminés (conserver LIVE, SCHEDULED et REPLAY)
+      where.status = { notIn: ['ENDED'] };
     }
     if (query?.search && query.search.trim()) {
       where.OR = [
@@ -441,50 +441,20 @@ export class LivesService {
     if (!file) throw new BadRequestException('Fichier vidéo manquant.');
 
     let recordingUrl = '';
-    const tempDir = join(process.cwd(), 'uploads', 'temp_lives');
-    if (!existsSync(tempDir)) {
-      mkdirSync(tempDir, { recursive: true });
-    }
+    const filename = `lives/recordings/${id}_${Date.now()}.webm`;
 
-    const tempInputFile = join(tempDir, `${id}_raw_${Date.now()}.webm`);
-
+    // 1. Upload direct MinIO pour sauvegarde immédiate et réactivité instantanée
     try {
-      // 1. Écrire le buffer temporaire sur le disque pour FFmpeg
-      writeFileSync(tempInputFile, file.buffer);
-
-      // 2. Transcoder vers HLS via HlsTranscoderService
-      this.logger.log(`[LivesService] Début du transcodage HLS pour le live ${id}...`);
-      const transcodeResult = await this.hlsTranscoder.generateVideoVariants({
-        inputPath: tempInputFile,
-        mediaId: `lives/${id}`,
+      recordingUrl = await this.minioService.upload({
+        bucket: 'videos',
+        objectName: filename,
+        buffer: file.buffer,
+        contentType: file.mimetype || 'video/webm',
       });
-
-      recordingUrl = transcodeResult.masterUrl;
-      this.logger.log(`[LivesService] Replay HLS généré et uploadé dans MinIO pour ${id}: ${recordingUrl}`);
-    } catch (err: any) {
-      this.logger.warn(`[LivesService] Échec du transcodage HLS: ${err.message}. Repli sur upload direct webm...`);
-      // Fallback: upload direct MinIO .webm si ffmpeg échoue
-      const filename = `lives/recordings/${id}_${Date.now()}.webm`;
-      try {
-        recordingUrl = await this.minioService.upload({
-          bucket: 'videos',
-          objectName: filename,
-          buffer: file.buffer,
-          contentType: file.mimetype || 'video/webm',
-        });
-      } catch (uploadErr: any) {
-        this.logger.error(`[LivesService] Échec upload direct MinIO : ${uploadErr.message}`);
-        recordingUrl = `/media/${filename}`;
-      }
-    } finally {
-      // Nettoyage du fichier brut temporaire
-      if (existsSync(tempInputFile)) {
-        try {
-          unlinkSync(tempInputFile);
-        } catch {
-          // ignore
-        }
-      }
+      this.logger.log(`[LivesService] Upload direct MinIO réussi pour le live ${id}: ${recordingUrl}`);
+    } catch (uploadErr: any) {
+      this.logger.error(`[LivesService] Échec upload direct MinIO : ${uploadErr.message}`);
+      recordingUrl = `/media/${filename}`;
     }
 
     const newStatus = live.retentionDays > 0 ? 'REPLAY' : live.status;
@@ -492,21 +462,56 @@ export class LivesService {
       ? new Date(Date.now() + live.retentionDays * 24 * 60 * 60 * 1000)
       : null;
 
-    const isHls = recordingUrl.includes('.m3u8');
-
     const updated = await this.prisma.liveStream.update({
       where: { id },
       data: {
         recordingUrl,
         streamUrl: recordingUrl,
-        playbackType: isHls ? 'HLS' : live.playbackType,
+        playbackType: 'EXTERNAL',
         isRecorded: true,
         status: newStatus,
         cleanupAt,
       },
     });
 
-    this.logger.log(`[LivesService] Enregistrement sauvegardé pour le live ${id}: ${recordingUrl} (playback: ${isHls ? 'HLS' : live.playbackType})`);
+    // 2. Transcodage HLS haute fidélité en arrière-plan (non bloquant pour l'utilisateur)
+    const tempDir = join(process.cwd(), 'uploads', 'temp_lives');
+    if (!existsSync(tempDir)) {
+      mkdirSync(tempDir, { recursive: true });
+    }
+    const tempInputFile = join(tempDir, `${id}_raw_${Date.now()}.webm`);
+
+    (async () => {
+      try {
+        writeFileSync(tempInputFile, file.buffer);
+        this.logger.log(`[LivesService] Début du transcodage HLS en arrière-plan pour le live ${id}...`);
+        const transcodeResult = await this.hlsTranscoder.generateVideoVariants({
+          inputPath: tempInputFile,
+          mediaId: `lives/${id}`,
+        });
+        await this.prisma.liveStream.update({
+          where: { id },
+          data: {
+            recordingUrl: transcodeResult.masterUrl,
+            streamUrl: transcodeResult.masterUrl,
+            playbackType: 'HLS',
+          },
+        });
+        this.logger.log(`[LivesService] Replay HLS prêt en arrière-plan pour ${id}: ${transcodeResult.masterUrl}`);
+      } catch (err: any) {
+        this.logger.warn(`[LivesService] Transcodage HLS arrière-plan ignoré ou échoué: ${err.message}. Le Replay WebM direct reste actif.`);
+      } finally {
+        if (existsSync(tempInputFile)) {
+          try {
+            unlinkSync(tempInputFile);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    })();
+
+    this.logger.log(`[LivesService] Replay sauvegardé pour le live ${id}: ${recordingUrl} (status: ${newStatus})`);
     return this.formatLiveItem(updated);
   }
 
