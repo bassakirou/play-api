@@ -202,6 +202,9 @@ model Video {
   title         String
   description   String?
   videoUrl      String
+  mediaAssetId  String?
+  mediaAsset    MediaAsset?     @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  publishWhenReady Boolean     @default(false)
   thumbnailUrl  String?
   duration      Int
   views         Int             @default(0)
@@ -226,6 +229,10 @@ model Video {
   artists       Artist[]        @relation("VideoArtists")
   VideoPlaylist VideoPlaylist[] @relation("VideoPlaylistVideos")
   comments      VideoComment[]
+  playbackSessions VideoPlaybackSession[]
+
+  @@index([mediaAssetId])
+  @@index([publishWhenReady, mediaAssetId])
 }
 
 model VideoComment {
@@ -371,10 +378,112 @@ model MediaAsset {
   size         Int?     // bytes
   duration     Int?     // seconds for audio/video
   format       String?  // e.g. "MP3", "WAV", "MP4", "JPG", "PNG", "WEBP"
+  originalBucket String?
+  originalObject String?
+  videos       Video[]
+  delivery     VideoDelivery?
   userId       String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model VideoDelivery {
+  id              String     @id @default(uuid())
+  mediaAssetId    String     @unique
+  mediaAsset      MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  provider        String     @default("CLOUDFLARE")
+  status          String     @default("QUEUED")
+  remoteUid       String?    @unique
+  attempts        Int        @default(0)
+  nextAttemptAt   DateTime   @default(now())
+  leaseUntil      DateTime?
+  lastError       String?
+  failureCode     String?
+  processingStartedAt DateTime?
+  syncedAt        DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([status, nextAttemptAt])
+}
+
+model VideoPlaybackSession {
+  id              String   @id @default(uuid())
+  tokenHash       String
+  videoId         String
+  video           Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  startedAt       DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+  expiresAt       DateTime
+  endedAt         DateTime?
+  playing         Boolean  @default(false)
+  sequence        Int      @default(0)
+  playedSeconds   Float    @default(0)
+  reportedSeconds Float    @default(0)
+  bufferSeconds   Float    @default(0)
+  stalls          Int      @default(0)
+  errors          Int      @default(0)
+  startupMs       Float?
+  height          Int?
+
+  @@index([playing, expiresAt])
+  @@index([startedAt, videoId])
+}
+
+model VideoMonitorSample {
+  id                   String   @id @default(uuid())
+  hostId               String
+  sampledAt            DateTime @default(now())
+  cpuPercent           Float?
+  memoryPercent        Float?
+  diskPercent          Float?
+  nodeRssBytes         Float
+  networkRxBps         Float?
+  networkTxBps         Float?
+  networkCapacityMbps  Float?
+  databaseOk           Boolean?
+  minioOk              Boolean?
+  databaseMs           Float?
+  minioMs              Float?
+  disks                Json
+  activeSessions       Int      @default(0)
+
+  @@index([hostId, sampledAt])
+  @@index([sampledAt])
+}
+
+model VideoMonitorAlert {
+  id              String   @id @default(uuid())
+  key             String   @unique
+  severity        String
+  message         String
+  openedAt        DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  occurrences     Int      @default(1)
+}
+
+model CloudflareUsageSnapshot {
+  id              String   @id
+  fetchedAt       DateTime
+  minutesDelivered Float
+  storedMinutes   Float?
+  capacityMinutes Float?
+  daily           Json
+  countries       Json
+}
+
+model VideoExternalProbe {
+  id          String   @id @default(uuid())
+  probeId     String
+  observedAt  DateTime
+  status      String
+  latencyMs   Float?
+
+  @@unique([probeId, observedAt])
+  @@index([observedAt])
 }
 
 model LiveStream {

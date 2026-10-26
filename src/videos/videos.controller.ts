@@ -38,8 +38,8 @@ export class VideosController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('read:video')
   @Get('admin')
-  findAllAdmin() {
-    return this.videosService.findAllAdmin();
+  findAllAdmin(@Req() req: any) {
+    return this.videosService.findAllAdmin(req.user);
   }
 
   @Get('artist/:artistId')
@@ -74,30 +74,30 @@ export class VideosController {
   @CheckPermissions('create:video')
   @Post()
   create(@Req() req: any, @Body() dto: CreateVideoDto) {
-    return this.videosService.create(dto, req.user?.userId);
+    return this.videosService.create(dto, req.user?.userId, req.user?.role);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('me')
   createMyVideo(@Req() req: any, @Body() body: any) {
-    return this.videosService.createForUser(req.user.userId, body);
+    return this.videosService.createForUser(req.user.userId, body, req.user?.role);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('update:video')
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: any) {
-    return this.videosService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: any, @Req() req: any) {
+    return this.videosService.update(id, dto, req.user);
   }
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('update:video')
   @Patch(':id')
-  patchUpdate(@Param('id') id: string, @Body() dto: any) {
-    return this.videosService.update(id, dto);
+  patchUpdate(@Param('id') id: string, @Body() dto: any, @Req() req: any) {
+    return this.videosService.update(id, dto, req.user);
   }
 
   @Patch(':id/metrics')

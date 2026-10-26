@@ -9,7 +9,9 @@ import {
   Res,
   UploadedFile,
   UseInterceptors,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage, memoryStorage } from 'multer';
 import { extname, join } from 'path';
@@ -21,6 +23,7 @@ import { HlsTranscoderService } from '../storage/hls-transcoder.service';
 import { MediaService } from '../media/media.service';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, createReadStream, createWriteStream, rmSync, statSync } from 'fs';
 import { Readable } from 'stream';
+import { videoByteRange } from './video-byte-range';
 
 async function streamToString(stream: any): Promise<string> {
   const chunks: Buffer[] = [];
@@ -824,6 +827,7 @@ export class FilesController {
   }
 
   @Post('upload-video')
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskVideoStorage(),
@@ -840,102 +844,19 @@ export class FilesController {
   async uploadVideo(@UploadedFile() file?: Express.Multer.File, @Req() req?: any) {
     if (!file) return { error: 'No file' };
 
-    const uniqueName = file.filename || `${Date.now()}-${randomBytes(6).toString('hex')}${extname(file.originalname)}`;
-    const isProduction =
-      process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
-
-    const fileBuffer = file.buffer || (file.path ? readFileSync(file.path) : null);
-
-    if (!fileBuffer && !file.path) {
-      console.error('[FilesController] Error: fileBuffer is null or undefined for video upload');
-      return { error: 'No video file buffer available' };
-    }
-
-    // Probing source video metadata & extracting video poster snapshot
-    let analysis: any = null;
-    let posterUrl: string | null = null;
-
-    if (file.path && existsSync(file.path)) {
-      analysis = await this.hlsTranscoder.analyzeVideo(file.path);
-      try {
-        const posterBaseName = `${Date.now()}-${randomBytes(6).toString('hex')}`;
-        posterUrl = await this.hlsTranscoder.generateAndUploadPoster(file.path, posterBaseName);
-      } catch (err: any) {
-        console.warn(`[FilesController] Could not generate video poster: ${err.message}`);
-      }
-    }
-
-    let finalUrl = '';
-
-    if (isProduction && this.blob.isEnabled() && fileBuffer) {
-      try {
-        const objectName = `videos/${uniqueName}`;
-        finalUrl = await this.blob.upload({
-          objectName,
-          buffer: fileBuffer,
-          contentType: file.mimetype,
-        });
-      } catch (err) {
-        console.error(
-          `[FilesController] Vercel Blob video upload failed: ${err.message}`,
-        );
-      }
-    }
-
-    if (!finalUrl && this.minio.isEnabled() && fileBuffer) {
-      try {
-        console.log(`[FilesController] Uploading video to MinIO: ${uniqueName}`);
-        const url = await this.minio.upload({
-          bucket: 'videos',
-          objectName: uniqueName,
-          buffer: fileBuffer,
-          contentType: file.mimetype || 'video/mp4',
-        });
-        finalUrl = typeof url === 'string' ? url : (url as any).url || url;
-      } catch (err) {
-        if (file.path && existsSync(file.path)) {
-          try { rmSync(file.path); } catch {}
-        }
-        console.error(`[FilesController] MinIO video upload failed: ${err.message}`);
-        throw new BadRequestException(`Échec de l'upload vidéo vers MinIO: ${err.message}`);
-      }
-    }
-
-    if (file.path && existsSync(file.path)) {
-      try { rmSync(file.path); } catch {}
-    }
-
-    if (!finalUrl) {
-      throw new BadRequestException('Storage service is not enabled');
-    }
-
-    const userId = req?.body?.userId || req?.user?.id || req?.user?.sub || req?.user?.userId;
-    const ext = extname(file.originalname).toLowerCase().replace('.', '');
-    const title = file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-
     try {
-      await this.mediaService.create({
-        title,
-        filename: file.originalname,
-        fileUrl: finalUrl,
-        thumbnailUrl: posterUrl || analysis?.thumbnailUrl || undefined,
-        type: 'video',
-        mimeType: file.mimetype || 'video/mp4',
-        size: file.size || (fileBuffer ? fileBuffer.length : 0),
-        duration: analysis?.duration ? Math.round(analysis.duration) : 0,
-        format: ext.toUpperCase(),
+      const analysis = file.path ? await this.hlsTranscoder.analyzeVideo(file.path) : null;
+      const buffer = file.buffer || (file.path ? readFileSync(file.path) : undefined);
+      if (!buffer) throw new BadRequestException("Fichier vidéo indisponible");
+      const userId = req?.user?.userId || req?.user?.id || req?.user?.sub;
+      const asset = await this.mediaService.uploadAndCreate({ ...file, buffer }, {
+        type: "video", duration: analysis?.duration ? Math.round(analysis.duration) : 0,
       }, userId);
-    } catch (e: any) {
-      console.warn(`[FilesController] Failed to auto-register video MediaAsset: ${e.message}`);
+      return { url: asset.fileUrl, rawUrl: asset.fileUrl, mediaAssetId: asset.id,
+        posterUrl: asset.thumbnailUrl, thumbnailUrl: asset.thumbnailUrl, analysis };
+    } finally {
+      if (file.path && existsSync(file.path)) { try { rmSync(file.path); } catch {} }
     }
-
-    return {
-      url: finalUrl,
-      rawUrl: finalUrl,
-      posterUrl,
-      thumbnailUrl: posterUrl || analysis?.thumbnailUrl || undefined,
-      analysis,
-    };
   }
 
   @Get('resolved-audio')
@@ -1190,7 +1111,7 @@ export class FilesController {
           const bucket = match[1] === 'play-videos' ? 'videos' : match[1];
           const objectName = match[2];
           try {
-            const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
+            let { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
             if (objectName.endsWith('.m3u8')) {
               const text = await streamToString(stream);
               const baseDirUrl = url.substring(0, url.lastIndexOf('/') + 1);
@@ -1222,10 +1143,25 @@ export class FilesController {
             } else if (objectName.endsWith('.mp4')) {
               res.setHeader('Content-Type', 'video/mp4');
             }
-            if (stat?.size) {
-              res.setHeader('Content-Length', stat.size);
-            }
             res.setHeader('Accept-Ranges', 'bytes');
+            const range = videoByteRange(req.headers.range, stat?.size ?? 0);
+            if (range === 'unsatisfiable') {
+              stream.destroy();
+              res.setHeader('Content-Range', `bytes */${stat?.size ?? 0}`);
+              res.status(416).end();
+              return;
+            }
+            if (range) {
+              stream.destroy();
+              const length = range.end - range.start + 1;
+              ({ stream } = await this.minio.getObjectStream(bucket, objectName, { offset: range.start, length }));
+              res.setHeader('Content-Range', `bytes ${range.start}-${range.end}/${stat.size}`);
+              res.setHeader('Content-Length', length);
+              res.status(206);
+              stream.pipe(res);
+              return;
+            }
+            if (stat?.size !== undefined) res.setHeader('Content-Length', stat.size);
             res.status(200);
             stream.pipe(res);
             return;

@@ -32,12 +32,14 @@ import { VideoCommentsModule } from './video-comments/video-comments.module';
 import { ShareSettingsModule } from './share-settings/share-settings.module';
 import { TaraModule } from './tara/tara.module';
 import { MonetizationModule } from './monetization/monetization.module';
+import { VideoDeliveryModule } from './video-delivery/video-delivery.module';
+import { VideoObservabilityModule } from './video-observability/video-observability.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env.local', '.env'],
+      envFilePath: process.env.NODE_ENV === 'production' ? '.env' : '.env.local',
     }),
     ScheduleModule.forRoot(),
     PrismaModule,
@@ -61,6 +63,8 @@ import { MonetizationModule } from './monetization/monetization.module';
     StatsModule,
     AudiobooksModule,
     MediaModule,
+    VideoDeliveryModule,
+    VideoObservabilityModule,
     LivesModule,
     AcademicModule,
     VideoCommentsModule,

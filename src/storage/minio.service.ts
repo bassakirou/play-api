@@ -102,6 +102,17 @@ export class MinioService implements OnModuleInit {
     return !!this.client;
   }
 
+  getBucketName(bucket: 'audio' | 'images' | 'videos') {
+    return this.cfg.buckets?.[bucket] || bucket;
+  }
+
+  async readVideoOriginal(bucket: string, objectName: string) {
+    if (!this.client || bucket !== this.getBucketName('videos')) throw new Error('Original storage unavailable');
+    const stat = await this.client.statObject(bucket, objectName);
+    const stream = await this.client.getObject(bucket, objectName);
+    return { stat, stream };
+  }
+
   /**
    * Apply a public-read S3 policy to a bucket (idempotent – skips
    * if already applied during this process lifetime).

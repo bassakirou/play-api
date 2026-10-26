@@ -18,7 +18,7 @@ for (const p of candidateLocalPaths) {
     break;
   }
 }
-if (!loadedLocal) {
+if (!loadedLocal && process.env.NODE_ENV === 'production') {
   dotenv.config();
 }
 
@@ -39,11 +39,12 @@ async function bootstrap() {
   if (!process.env.SMTP_SECURE) process.env.SMTP_SECURE = 'false';
   if (!process.env.SMTP_IGNORE_TLS) process.env.SMTP_IGNORE_TLS = 'false';
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  // Resolve visitor addresses only through explicitly trusted reverse proxies.
+  app.set('trust proxy', process.env.TRUSTED_PROXY_CIDRS?.split(',').map(value => value.trim()).filter(Boolean) || 'loopback');
 
-  const express = require('express');
-  app.use(express.json({ limit: '100mb' }));
-  app.use(express.urlencoded({ limit: '100mb', extended: true }));
+  app.useBodyParser('json', { limit: '100mb' });
+  app.useBodyParser('urlencoded', { limit: '100mb', extended: true });
 
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   app.enableCors({

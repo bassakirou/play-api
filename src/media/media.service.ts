@@ -47,9 +47,9 @@ export class MediaService {
     }
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string) {
     try {
-      const item = await (this.prisma as any).mediaAsset.findUnique({ where: { id } });
+      const item = await (this.prisma as any).mediaAsset.findFirst({ where: { id, ...(userId ? { userId } : {}) } });
       return item || null;
     } catch (e: any) {
       this.logger.error(`Prisma findUnique failed: ${e.message}`);
@@ -57,7 +57,7 @@ export class MediaService {
     }
   }
 
-  async create(dto: CreateMediaAssetDto, userId?: string) {
+  async create(dto: CreateMediaAssetDto, userId?: string, original?: { bucket: string; objectName: string }) {
     const itemData = {
       title: dto.title || dto.filename,
       filename: dto.filename,
@@ -69,6 +69,8 @@ export class MediaService {
       duration: dto.duration || 0,
       format: dto.format || dto.filename.split('.').pop()?.toUpperCase() || '',
       userId: userId || undefined,
+      originalBucket: original?.bucket,
+      originalObject: original?.objectName,
     };
 
     try {
@@ -103,7 +105,7 @@ export class MediaService {
 
     let fileUrl = '';
 
-    if (this.blob.isEnabled() && fileBuffer) {
+    if (detectedType !== 'video' && this.blob.isEnabled() && fileBuffer) {
       try {
         fileUrl = await this.blob.upload({
           bucket,
@@ -171,6 +173,7 @@ export class MediaService {
         format,
       },
       userId,
+      detectedType === 'video' ? { bucket: this.minio.getBucketName('videos'), objectName: uniqueName } : undefined,
     );
   }
 
@@ -182,6 +185,9 @@ export class MediaService {
       }
       const asset = await (this.prisma as any).mediaAsset.findFirst({ where });
       if (asset) {
+        const linked = await this.prisma.video.count({ where: { mediaAssetId: id } });
+        const delivery = await this.prisma.videoDelivery.findUnique({ where: { mediaAssetId: id }, select: { id: true } });
+        if (linked || delivery) throw new BadRequestException('Cet original est conservé pour la diffusion vidéo et ne peut pas être supprimé de la bibliothèque.');
         // When deleting a media item, switch any associated video/post to draft mode (isPublished: false)
         try {
           const fileSearch = asset.fileUrl || asset.filename;
@@ -206,6 +212,7 @@ export class MediaService {
         await (this.prisma as any).mediaAsset.deleteMany({ where });
       }
     } catch (e: any) {
+      if (e instanceof BadRequestException) throw e;
       this.logger.error(`Prisma delete failed: ${e.message}`);
     }
     return { success: true, id };

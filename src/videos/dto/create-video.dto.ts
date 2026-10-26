@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Min,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -26,6 +27,11 @@ export class CreateVideoDto {
   @IsString()
   @IsNotEmpty()
   videoUrl: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsUUID()
+  mediaAssetId?: string | null;
 
   @ApiProperty({ required: false })
   @IsString()
@@ -86,5 +92,19 @@ export class CreateVideoDto {
   @IsBoolean()
   @IsOptional()
   isAcademic?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isMonetized?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  discountPrice?: number | null;
 }
 

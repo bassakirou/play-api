@@ -47,8 +47,9 @@ export class MediaController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Détail d’un média par son ID' })
-  findOne(@Param('id') id: string) {
-    return this.mediaService.findOne(id);
+  findOne(@Param('id') id: string, @Req() req: any) {
+    const admin = ['ADMIN', 'SUPER_ADMIN'].includes(req.user?.role);
+    return this.mediaService.findOne(id, admin ? undefined : req.user?.userId || req.user?.id);
   }
 
   @Post('upload')

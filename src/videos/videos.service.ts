@@ -1,9 +1,12 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MinioService } from '../storage/minio.service';
 import { CreateVideoDto } from './dto/create-video.dto';
+import { DeliveryCaller, VideoDeliveryService } from '../video-delivery/video-delivery.service';
+import { randomUUID } from 'crypto';
 
 const defaultInclude = {
+  mediaAsset: { include: { delivery: true } },
   artists: true,
   genre: true,
   user: {
@@ -24,6 +27,7 @@ export class VideosService {
   constructor(
     private prisma: PrismaService,
     private minio: MinioService,
+    private delivery: VideoDeliveryService,
   ) { }
 
   async findAll(category?: string, isAcademic?: boolean) {
@@ -45,12 +49,13 @@ export class VideosService {
     return Promise.all(videos.map((v) => this.hydrateUrls(v)));
   }
 
-  async findAllAdmin() {
+  async findAllAdmin(caller?: DeliveryCaller) {
     const videos = await (this.prisma as any).video.findMany({
+      where: ['ADMIN', 'SUPER_ADMIN'].includes(caller?.role || '') ? {} : { userId: caller?.id || '__unauthorized__' },
       include: defaultInclude,
       orderBy: { createdAt: 'desc' },
     });
-    return Promise.all(videos.map((v) => this.hydrateUrls(v)));
+    return Promise.all(videos.map((v) => this.hydrateUrls(v, true)));
   }
 
   async findOne(id: string) {
@@ -122,10 +127,10 @@ export class VideosService {
       include: defaultInclude,
       orderBy: { createdAt: 'desc' },
     });
-    return Promise.all(videos.map((v) => this.hydrateUrls(v)));
+    return Promise.all(videos.map((v) => this.hydrateUrls(v, true)));
   }
 
-  async create(createVideoDto: CreateVideoDto, userId?: string) {
+  async create(createVideoDto: CreateVideoDto, userId?: string, role?: string) {
     const dto = createVideoDto as unknown as Record<string, any>;
     const {
       artistIds,
@@ -135,6 +140,9 @@ export class VideosService {
       tags,
       thumbnailUrl,
       videoPlaylistIds,
+      mediaAssetId,
+      publishWhenReady: _ignoredPublishIntent,
+      mediaAsset: _ignoredAsset,
       ...rest
     } = dto;
 
@@ -167,11 +175,16 @@ export class VideosService {
     }
 
     const taxonomy = await this.resolveTaxonomy(rest.category, tags);
+    const publication = await this.delivery.preparePublication(mediaAssetId, !!rest.isPublished, { id: userId, role });
+    const videoId = randomUUID();
     const data: any = {
       ...rest,
+      ...publication,
+      id: videoId,
+      videoUrl: await this.delivery.sourceReference(videoId, mediaAssetId, rest.videoUrl),
       isAcademic: Boolean(dto.isAcademic),
       isMonetized: Boolean(dto.isMonetized),
-      price: dto.isMonetized && dto.price ? Number(dto.price) : null,
+      price: dto.isMonetized && dto.price ? Number(dto.price) : 0,
       discountPrice: dto.isMonetized && dto.discountPrice ? Number(dto.discountPrice) : null,
       category: taxonomy.categoryName,
       categoryId: taxonomy.categoryId,
@@ -196,10 +209,10 @@ export class VideosService {
       include: defaultInclude,
     });
 
-    return this.hydrateUrls(created);
+    return this.hydrateUrls(created, true);
   }
 
-  async createForUser(userId: string, body: any) {
+  async createForUser(userId: string, body: any, role?: string) {
     let artist = await this.prisma.artist.findUnique({
       where: { userId },
       select: { id: true },
@@ -238,18 +251,21 @@ export class VideosService {
     const taxonomy = await this.resolveTaxonomy(body?.category, body?.tags);
     const genreId = typeof body?.genreId === 'string' ? body.genreId : undefined;
 
+    const publication = await this.delivery.preparePublication(body.mediaAssetId, body.isPublished !== false, { id: userId, role });
+    const videoId = randomUUID();
     const created = await (this.prisma as any).video.create({
       data: {
         title,
         description: typeof body?.description === 'string' ? body.description : null,
-        videoUrl,
+        id: videoId,
+        videoUrl: await this.delivery.sourceReference(videoId, body.mediaAssetId, videoUrl),
         thumbnailUrl: thumbnailUrl || null,
         duration: Math.trunc(duration),
         isAcademic: Boolean(body?.isAcademic),
         isMonetized: Boolean(body?.isMonetized),
-        price: body?.isMonetized && body?.price ? Number(body.price) : null,
+        price: body?.isMonetized && body?.price ? Number(body.price) : 0,
         discountPrice: body?.isMonetized && body?.discountPrice ? Number(body.discountPrice) : null,
-        isPublished: typeof body?.isPublished === 'boolean' ? body.isPublished : true,
+        ...publication,
         category: taxonomy.categoryName,
         categoryId: taxonomy.categoryId,
         tags: taxonomy.tags.map((tag) => tag.name),
@@ -268,10 +284,13 @@ export class VideosService {
       include: defaultInclude,
     });
 
-    return this.hydrateUrls(created);
+    return this.hydrateUrls(created, true);
   }
 
-  async update(id: string, updateVideoDto: any) {
+  async update(id: string, updateVideoDto: any, caller?: DeliveryCaller) {
+    const existing = await this.prisma.video.findUnique({ where: { id } });
+    if (!existing) throw new BadRequestException('Video not found');
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(caller?.role || '') && (!caller?.id || existing.userId !== caller.id)) throw new ForbiddenException();
     const {
       artistIds,
       channelId,
@@ -280,10 +299,19 @@ export class VideosService {
       thumbnailUrl,
       videoUrl,
       videoPlaylistIds,
+      mediaAssetId,
+      publishWhenReady: _ignoredPublishIntent,
+      mediaAsset: _ignoredAsset,
       ...rest
     } = updateVideoDto || {};
 
     const data: Record<string, any> = { ...rest };
+    const publication = await this.delivery.preparePublication(
+      mediaAssetId === undefined ? existing.mediaAssetId : mediaAssetId,
+      typeof rest.isPublished === 'boolean' ? rest.isPublished : existing.isPublished || existing.publishWhenReady,
+      caller || {},
+    );
+    Object.assign(data, publication);
     if (typeof rest.isAcademic !== 'undefined') {
       data.isAcademic = Boolean(rest.isAcademic);
     }
@@ -291,7 +319,7 @@ export class VideosService {
       data.isMonetized = Boolean(rest.isMonetized);
     }
     if (typeof rest.price !== 'undefined') {
-      data.price = rest.price !== null ? Number(rest.price) : null;
+      data.price = rest.price !== null ? Number(rest.price) : 0;
     }
     if (typeof rest.discountPrice !== 'undefined') {
       data.discountPrice = rest.discountPrice !== null ? Number(rest.discountPrice) : null;
@@ -315,6 +343,7 @@ export class VideosService {
     if (typeof videoUrl !== 'undefined') {
       data.videoUrl = videoUrl;
     }
+    data.videoUrl = await this.delivery.sourceReference(id, publication.mediaAssetId, data.videoUrl || existing.videoUrl);
     if (typeof tags !== 'undefined' || typeof rest.category !== 'undefined') {
       const current = await (this.prisma as any).video.findUnique({ where: { id }, select: { category: true, tags: true } });
       const taxonomy = await this.resolveTaxonomy(typeof rest.category !== 'undefined' ? rest.category : current?.category, typeof tags !== 'undefined' ? tags : current?.tags);
@@ -350,7 +379,7 @@ export class VideosService {
       include: defaultInclude,
     });
 
-    return this.hydrateUrls(updated);
+    return this.hydrateUrls(updated, true);
   }
 
   async updateMetrics(
@@ -406,7 +435,7 @@ export class VideosService {
     return { ok: true };
   }
 
-  private async hydrateUrls(video: any) {
+  private async hydrateUrls(video: any, managed = false) {
     const rawPlaylists = video?.VideoPlaylist || [];
     let user = video?.user || null;
 
@@ -475,11 +504,15 @@ export class VideosService {
       }
     }
 
+    const { mediaAsset, mediaAssetId, publishWhenReady, ...safeVideo } = video;
+    const delivery = mediaAsset?.delivery;
     return {
-      ...video,
+      ...safeVideo,
+      ...(managed ? { mediaAssetId, publishWhenReady } : {}),
+      delivery: delivery ? { provider: delivery.provider, status: delivery.status } : null,
       user,
-      videoUrl: video.videoUrl
-        ? await this.refreshUrl(video.videoUrl, 'videos')
+      videoUrl: delivery && !managed ? `pyramidplay:video:${video.id}` : (delivery && managed ? mediaAsset.fileUrl : video.videoUrl)
+        ? await this.refreshUrl(delivery && managed ? mediaAsset.fileUrl : video.videoUrl, 'videos')
         : null,
       thumbnailUrl: video.thumbnailUrl
         ? await this.refreshUrl(video.thumbnailUrl, 'images')
