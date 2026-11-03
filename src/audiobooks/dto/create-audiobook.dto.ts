@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsBoolean,
+  IsNumber,
+  IsInt,
+  Min,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAudiobookDto {
@@ -7,12 +15,12 @@ export class CreateAudiobookDto {
   @IsNotEmpty()
   title: string;
 
-  @ApiProperty({ description: 'Nom de l\'auteur' })
+  @ApiProperty({ description: "Nom de l'auteur" })
   @IsString()
   @IsNotEmpty()
   author: string;
 
-  @ApiPropertyOptional({ description: 'ID de l\'utilisateur si auteur inscrit' })
+  @ApiPropertyOptional({ description: "ID de l'utilisateur si auteur inscrit" })
   @IsString()
   @IsOptional()
   authorId?: string;
@@ -32,33 +40,44 @@ export class CreateAudiobookDto {
   @IsOptional()
   coverUrl?: string;
 
-  @ApiPropertyOptional({ description: 'Catégorie du livre audio', default: 'Général' })
+  @ApiPropertyOptional({
+    description: 'Catégorie du livre audio',
+    default: 'Général',
+  })
   @IsString()
   @IsOptional()
   category?: string;
 
-  @ApiPropertyOptional({ description: 'Indique si le livre audio est en tendance', default: false })
+  @ApiPropertyOptional({
+    description: 'Indique si le livre audio est en tendance',
+    default: false,
+  })
   @IsBoolean()
   @IsOptional()
   isTrending?: boolean;
 
-  @ApiPropertyOptional({ description: 'Note d\'évaluation', default: 5.0 })
+  @ApiPropertyOptional({ description: "Note d'évaluation", default: 5.0 })
   @IsNumber()
   @IsOptional()
   rating?: number;
 
-  @ApiPropertyOptional({ description: 'Indique si le livre audio est payant', default: false })
+  @ApiPropertyOptional({
+    description: 'Indique si le livre audio est payant',
+    default: false,
+  })
   @IsBoolean()
   @IsOptional()
   isMonetized?: boolean;
 
   @ApiPropertyOptional({ description: 'Prix standard en XAF' })
-  @IsNumber()
+  @IsInt()
+  @Min(0)
   @IsOptional()
   price?: number;
 
   @ApiPropertyOptional({ description: 'Prix promotionnel en XAF' })
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   @IsOptional()
   discountPrice?: number;
 

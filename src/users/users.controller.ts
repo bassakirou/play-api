@@ -34,7 +34,9 @@ export class UsersController {
   @Patch('me/profile')
   @ApiOperation({ summary: 'Update current user profile' })
   updateProfile(@Request() req, @Body() updateUserDto: any) {
-    return this.usersService.update(req.user.userId, updateUserDto);
+    const fields = ['email', 'password', 'name', 'bio', 'imageUrl', 'bannerUrl', 'country', 'gallery'];
+    const profile = Object.fromEntries(fields.filter(key => updateUserDto?.[key] !== undefined).map(key => [key, updateUserDto[key]]));
+    return this.usersService.update(req.user.userId, profile);
   }
 
   @ApiBearerAuth()
@@ -42,8 +44,7 @@ export class UsersController {
   @Patch('me/system-roles')
   @ApiOperation({ summary: 'Update current user system roles' })
   updateMySystemRoles(@Request() req, @Body('systemRoles') systemRoles: string[]) {
-    const isSuperAdmin = req.user.role === 'SUPER_ADMIN' || req.user.role === 'ADMIN';
-    return this.usersService.updateSystemRoles(req.user.userId, systemRoles, isSuperAdmin);
+    return this.usersService.updateSystemRoles(req.user.userId, systemRoles);
   }
 
   @Get('authors')
@@ -62,8 +63,8 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('create:user')
   @Post()
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
+  async create(@Request() req, @Body() createUserDto: CreateUserDto) {
+    return this.usersService.create(createUserDto, await this.usersService.canManageAdministrativeRoles(req.user.userId));
   }
 
   @ApiBearerAuth()
@@ -136,8 +137,8 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('update:user')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUserDto: any) {
-    return this.usersService.update(id, updateUserDto);
+  async update(@Request() req, @Param('id') id: string, @Body() updateUserDto: any) {
+    return this.usersService.update(id, updateUserDto, await this.usersService.canManageAdministrativeRoles(req.user.userId));
   }
 
   @ApiBearerAuth()

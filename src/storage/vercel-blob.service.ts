@@ -37,7 +37,7 @@ export class VercelBlobService {
     }
 
     const { url } = await put(opts.objectName, opts.buffer, {
-      access: 'public',
+      access: opts.bucket === 'images' || opts.objectName.startsWith('images/') ? 'public' : 'private',
       contentType: opts.contentType,
     });
 

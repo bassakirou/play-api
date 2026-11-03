@@ -5,6 +5,25 @@ import { PrismaService } from '../prisma/prisma.service';
 export class StatsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async getCreatorStats(userId: string) {
+    const [songs, videos, books, albums, courses, revenue] = await Promise.all([
+      this.prisma.song.findMany({ where: { artists: { some: { userId } } }, select: { id: true, title: true, plays: true } }),
+      this.prisma.video.findMany({ where: { userId }, select: { id: true, title: true, views: true } }),
+      this.prisma.audiobook.findMany({ where: { authorId: userId }, select: { id: true, title: true } }),
+      this.prisma.album.findMany({ where: { artist: { userId } }, select: { id: true, title: true } }),
+      this.prisma.academicCourse.findMany({ where: { instructorId: userId }, select: { id: true, title: true, studentsCount: true } }),
+      this.prisma.transaction.aggregate({ where: { status: 'SUCCESS', beneficiaryUserId: userId }, _sum: { creatorShare: true } }),
+    ]);
+    return {
+      period: 'all-time',
+      songs, videos, books, albums, courses,
+      plays: songs.reduce((sum, item) => sum + item.plays, 0),
+      views: videos.reduce((sum, item) => sum + item.views, 0),
+      creatorRevenue: revenue._sum.creatorShare || 0,
+      uniqueListeners: null, listenedSeconds: null, retention: null,
+    };
+  }
+
   async getDashboardStats() {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);

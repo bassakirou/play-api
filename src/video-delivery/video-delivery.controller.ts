@@ -1,5 +1,6 @@
 import {
   CanActivate,
+  Body,
   Controller,
   Get,
   Headers,
@@ -49,6 +50,22 @@ export class VideoDeliveryController {
     return { cloudflareEnabled: this.cloudflare.isEnabled() };
   }
 
+  @Get('routing')
+  @UseGuards(JwtAuthGuard, DeliveryAdminGuard)
+  routing() { return this.delivery.routing(); }
+
+  @Post('routing')
+  @UseGuards(JwtAuthGuard, DeliveryAdminGuard)
+  setRouting(@Body('mode') mode: string) { return this.delivery.setRouting(mode); }
+
+  @Get('migration-candidates')
+  @UseGuards(JwtAuthGuard, DeliveryAdminGuard)
+  candidates() { return this.delivery.migrationCandidates(); }
+
+  @Post('migrate/:id')
+  @UseGuards(JwtAuthGuard, DeliveryAdminGuard)
+  migrate(@Param('id') id: string) { return this.delivery.migrate(id); }
+
   @Get('overview')
   @UseGuards(JwtAuthGuard, DeliveryAdminGuard)
   overview() {
@@ -83,10 +100,11 @@ export class VideoDeliveryController {
   playback(
     @Param('id') id: string,
     @Req() req: any,
+    @Query('source') source: string,
     @Res({ passthrough: true }) res: any,
   ) {
     res.setHeader('Cache-Control', 'private, no-store');
-    return this.delivery.playback(id, req.user);
+    return this.delivery.playback(id, req.user, source === 'local');
   }
 
   @Post('webhook')

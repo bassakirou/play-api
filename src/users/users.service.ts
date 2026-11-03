@@ -16,24 +16,38 @@ import * as bcrypt from 'bcryptjs';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createUserDto: CreateUserDto) {
+  private readonly selfServiceRoles = ['USER', 'ARTIST', 'AUTHOR', 'AUTEUR', 'CREATOR', 'CREATEUR', 'LABEL', 'ACADEMIC', 'FORMATEUR', 'ENSEIGNANT'];
+
+  async canManageAdministrativeRoles(actorId: string) {
+    if (!actorId) return false;
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, include: { role: true } });
+    return Boolean(actor && [actor.role?.name, ...(actor.systemRoles || [])].some(role => ['ADMIN', 'SUPER_ADMIN'].includes(role)));
+  }
+
+  async createFirstAdmin(dto: CreateUserDto) {
+    return this.prisma.$transaction(async db => {
+      // Global bootstrap lock prevents two concurrent unauthenticated setup calls.
+      await db.$queryRaw`SELECT pg_advisory_xact_lock(73924011)`;
+      if (await db.user.count()) throw new ForbiddenException('Initial setup already completed.');
+      return this.create({ ...dto, role: 'ADMIN', systemRoles: ['ADMIN'] }, true, db);
+    });
+  }
+
+  async create(createUserDto: CreateUserDto, allowAdministrativeRoles = false, db: any = this.prisma) {
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
-    const explicitRoles = createUserDto.systemRoles;
-    const hasExplicitSystemRoles = Array.isArray(explicitRoles) && explicitRoles.length > 0;
-    const systemRoles: string[] = hasExplicitSystemRoles
-      ? [...explicitRoles]
-      : [(createUserDto.role || 'USER').toUpperCase()];
-
-    // Find role
-    const primaryRoleName = (hasExplicitSystemRoles ? systemRoles[0] : (createUserDto.role || 'USER')).toUpperCase();
-    let role = await this.prisma.role.findUnique({ where: { name: primaryRoleName } });
-    if (!role) {
-      role = await this.prisma.role.create({ data: { name: primaryRoleName } });
-    }
+    const normalize = (role: unknown) => typeof role === 'string' ? role.trim().toUpperCase() : '';
+    const requested = Array.isArray(createUserDto.systemRoles) && createUserDto.systemRoles.length
+      ? createUserDto.systemRoles : [createUserDto.role || 'USER'];
+    let systemRoles = [...new Set(requested.map(normalize).filter(role =>
+      this.selfServiceRoles.includes(role) || (allowAdministrativeRoles && ['ADMIN', 'SUPER_ADMIN'].includes(role))))];
+    if (!systemRoles.length) systemRoles = ['USER'];
+    const primaryRoleName = systemRoles[0];
+    let role = await db.role.findUnique({ where: { name: primaryRoleName } });
+    if (!role) role = await db.role.create({ data: { name: primaryRoleName } });
 
     try {
-      const created = await this.prisma.user.create({
+      const created = await db.user.create({
         data: {
           email: createUserDto.email,
           password: hashedPassword,
@@ -46,11 +60,11 @@ export class UsersService {
       // Création du profil Artiste / Chaîne UNIQUEMENT si l'utilisateur possède le rôle système ARTIST ou CREATOR
       if (systemRoles.includes('ARTIST') || systemRoles.includes('CREATOR')) {
         const profileName = (created.name || created.email.split('@')[0] || (systemRoles.includes('CREATOR') ? 'Chaîne' : 'Artiste')).trim();
-        const existingArtist = await this.prisma.artist.findUnique({
+        const existingArtist = await db.artist.findUnique({
           where: { userId: created.id },
         });
         if (!existingArtist) {
-          await this.prisma.artist.create({
+          await db.artist.create({
             data: {
               name: profileName,
               userId: created.id,
@@ -111,10 +125,6 @@ export class UsersService {
       let changed = false;
       const roleName = (user.role?.name || '').toUpperCase();
 
-      if (user.artistProfile && !currentSys.includes('ARTIST')) {
-        currentSys.push('ARTIST');
-        changed = true;
-      }
       if (
         ['ARTIST', 'AUTHOR', 'CREATOR', 'ADMIN', 'SUPER_ADMIN'].includes(roleName) &&
         !currentSys.includes(roleName)
@@ -157,10 +167,6 @@ export class UsersService {
       let changed = false;
       const roleName = (user.role?.name || '').toUpperCase();
 
-      if (user.artistProfile && !currentSys.includes('ARTIST')) {
-        currentSys.push('ARTIST');
-        changed = true;
-      }
       if (
         ['ARTIST', 'AUTHOR', 'CREATOR', 'ADMIN', 'SUPER_ADMIN'].includes(roleName) &&
         !currentSys.includes(roleName)
@@ -191,9 +197,10 @@ export class UsersService {
     });
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
+  async update(id: string, updateUserDto: UpdateUserDto, allowAdministrativeRoles = false) {
     const dto = updateUserDto as unknown as Record<string, any>;
     const rawData: Record<string, any> = { ...dto };
+    if (dto.systemRoles !== undefined && !Array.isArray(dto.systemRoles)) throw new BadRequestException('systemRoles doit etre une liste de roles');
 
     if (typeof dto.password === 'string' && dto.password.trim().length > 0) {
       const p = dto.password.trim();
@@ -203,7 +210,7 @@ export class UsersService {
       delete rawData.password;
     }
 
-    if (typeof dto.role === 'string' && dto.role.trim().length > 0) {
+    if (allowAdministrativeRoles && typeof dto.role === 'string' && dto.role.trim().length > 0) {
       const roleName = dto.role.trim().toUpperCase();
       let role = await this.prisma.role.findUnique({ where: { name: roleName } });
       if (!role) {
@@ -212,6 +219,7 @@ export class UsersService {
       rawData.roleId = role.id;
     }
     delete rawData.role;
+    if (!allowAdministrativeRoles) delete rawData.roleId;
 
     const allowedKeys = [
       'email',
@@ -244,9 +252,10 @@ export class UsersService {
         where: { id },
         select: { systemRoles: true },
       });
-      const hadSuperAdmin = existingUser?.systemRoles?.includes('SUPER_ADMIN');
-      if (!hadSuperAdmin) {
-        cleanRoles = cleanRoles.filter((r) => r !== 'SUPER_ADMIN');
+      if (!allowAdministrativeRoles) {
+        cleanRoles = cleanRoles.filter((role: string) => this.selfServiceRoles.includes(role));
+        const preserved = (existingUser?.systemRoles || []).filter(role => ['ADMIN', 'SUPER_ADMIN'].includes(role));
+        cleanRoles = [...new Set([...cleanRoles, ...preserved])];
       }
       sanitizedData.systemRoles = cleanRoles;
     }
@@ -307,15 +316,8 @@ export class UsersService {
           ),
         )
       : [];
-    if (!isSuperAdmin) {
-      // Un utilisateur normal ne peut pas s'auto-attribuer SUPER_ADMIN
-      const user = await this.prisma.user.findUnique({ where: { id } });
-      const hadSuperAdmin = user?.systemRoles?.includes('SUPER_ADMIN');
-      validRoles = validRoles.filter((r) => r !== 'SUPER_ADMIN');
-      if (hadSuperAdmin) {
-        validRoles.push('SUPER_ADMIN');
-      }
-    }
+    // Self-service role changes may alter business identity only. Administrative grants are retained.
+    validRoles = validRoles.filter(role => this.selfServiceRoles.includes(role));
 
     const updated = await this.update(id, { systemRoles: validRoles } as any);
 

@@ -62,6 +62,13 @@ export class VideoObservabilityController {
     return this.monitor.acknowledge(id);
   }
 
+  @Get('alerts')
+  @UseGuards(JwtAuthGuard, DeliveryAdminGuard)
+  alerts(@Res({ passthrough: true }) res: any) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    return this.monitor.alerts();
+  }
+
   @Post('probe')
   probe(@Req() req: any, @Headers('x-probe-signature') signature?: string) {
     return this.probes.receive(req.rawBody, signature);

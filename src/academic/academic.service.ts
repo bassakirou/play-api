@@ -1,8 +1,11 @@
+import { MediaSourceOwnershipService } from '../content-access/media-source-ownership.service';
 import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
+import { AcademicSubscriptionService } from '../content-access/academic-subscription.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateCourseDto,
@@ -13,7 +16,66 @@ import {
 
 @Injectable()
 export class AcademicService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly subscriptions: AcademicSubscriptionService;
+  constructor(private readonly prisma: PrismaService) {
+    this.subscriptions = new AcademicSubscriptionService(prisma);
+  }
+
+  private validatePrice(course: {
+    isMonetized?: boolean;
+    price?: number;
+    discountPrice?: number | null;
+  }) {
+    if (
+      course.price !== undefined &&
+      (!Number.isInteger(course.price) || course.price < 0)
+    ) {
+      throw new BadRequestException(
+        'Le prix doit être un entier positif ou nul.',
+      );
+    }
+    if (course.isMonetized && (!course.price || course.price <= 0)) {
+      throw new BadRequestException(
+        'Une formation payante doit avoir un prix positif.',
+      );
+    }
+    if (
+      course.discountPrice != null &&
+      (!Number.isInteger(course.discountPrice) ||
+        course.discountPrice <= 0 ||
+        course.discountPrice >= (course.price || 0))
+    ) {
+      throw new BadRequestException(
+        'La remise doit être positive et inférieure au prix.',
+      );
+    }
+  }
+
+  private async getAccess(
+    course: { id: string; instructorId: string | null; isMonetized: boolean },
+    userId?: string,
+  ) {
+    const isPurchased =
+      !!userId &&
+      !!(await this.prisma.userPurchasedContent.findUnique({
+        where: {
+          userId_contentId_contentType: {
+            userId,
+            contentId: course.id,
+            contentType: 'COURSE',
+          },
+        },
+      }));
+    const isManager =
+      !!userId &&
+      (course.instructorId === userId ||
+        (await this.subscriptions.isAdmin(userId)));
+    return {
+      hasAccess: !course.isMonetized || isPurchased || isManager,
+      isPurchased,
+      isManager,
+    };
+  }
 
   async findAll(params: {
     category?: string;
@@ -81,7 +143,7 @@ export class AcademicService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string) {
     const course = await this.prisma.academicCourse.findUnique({
       where: { id },
       include: {
@@ -113,7 +175,22 @@ export class AcademicService {
       throw new NotFoundException(`Formation ${id} non trouvée`);
     }
 
-    return course;
+    const access = await this.getAccess(course, userId);
+    if (!course.isPublished && !access.isManager)
+      throw new NotFoundException(`Formation ${id} non trouvée`);
+    return {
+      ...course,
+      hasAccess: access.hasAccess,
+      isPurchased: access.isPurchased,
+      modules: course.modules.map((module) => ({
+        ...module,
+        lessons: module.lessons.map((lesson) => {
+          if (access.hasAccess || lesson.isFreePreview) return lesson;
+          const { contentUrl, notes, resources, ...metadata } = lesson;
+          return metadata;
+        }),
+      })),
+    };
   }
 
   async getCategories() {
@@ -181,7 +258,7 @@ export class AcademicService {
         email: inst.email,
         imageUrl: inst.artistProfile?.imageUrl || null,
         bio: inst.artistProfile?.bio || null,
-        certified: inst.artistProfile?.certified || true,
+        certified: inst.artistProfile?.certified ?? false,
         coursesCount: inst.instructedCourses.length,
         totalStudents,
         rating: Number(avgRating.toFixed(1)),
@@ -190,26 +267,14 @@ export class AcademicService {
   }
 
   async create(userId: string, dto: CreateCourseDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { systemRoles: true, role: { select: { name: true } } },
-    });
-
-    const isAuthorized =
-      user?.systemRoles?.includes('ACADEMIC') ||
-      user?.systemRoles?.includes('ADMIN') ||
-      user?.systemRoles?.includes('SUPER_ADMIN') ||
-      user?.role?.name === 'ADMIN' ||
-      user?.role?.name === 'SUPER_ADMIN';
-
-    if (!isAuthorized) {
-      throw new ForbiddenException(
-        "Vous devez posséder le rôle ACADEMIC pour créer une formation.",
-      );
-    }
+    await this.subscriptions.assertCanPublish(userId);
+    this.validatePrice(dto);
 
     return this.prisma.academicCourse.create({
       data: {
+        isMonetized: dto.isMonetized ?? false,
+        price: dto.price ?? 0,
+        discountPrice: dto.discountPrice,
         title: dto.title,
         subtitle: dto.subtitle,
         description: dto.description,
@@ -238,17 +303,22 @@ export class AcademicService {
     dto: UpdateCourseDto,
     isAdmin: boolean,
   ) {
-    const course = await this.prisma.academicCourse.findUnique({ where: { id } });
+    const course = await this.prisma.academicCourse.findUnique({
+      where: { id },
+    });
     if (!course) {
       throw new NotFoundException(`Formation ${id} non trouvée`);
     }
 
+    isAdmin = await this.subscriptions.isAdmin(userId);
     if (!isAdmin && course.instructorId !== userId) {
       throw new ForbiddenException(
         "Vous n'avez pas l'autorisation de modifier cette formation.",
       );
     }
 
+    await this.subscriptions.assertCanPublish(userId);
+    this.validatePrice({ ...course, ...dto });
     return this.prisma.academicCourse.update({
       where: { id },
       data: dto,
@@ -261,11 +331,14 @@ export class AcademicService {
   }
 
   async delete(id: string, userId: string, isAdmin: boolean) {
-    const course = await this.prisma.academicCourse.findUnique({ where: { id } });
+    const course = await this.prisma.academicCourse.findUnique({
+      where: { id },
+    });
     if (!course) {
       throw new NotFoundException(`Formation ${id} non trouvée`);
     }
 
+    isAdmin = await this.subscriptions.isAdmin(userId);
     if (!isAdmin && course.instructorId !== userId) {
       throw new ForbiddenException(
         "Vous n'avez pas l'autorisation de supprimer cette formation.",
@@ -284,12 +357,15 @@ export class AcademicService {
     const course = await this.prisma.academicCourse.findUnique({
       where: { id: courseId },
     });
-    if (!course) throw new NotFoundException(`Formation ${courseId} non trouvée`);
+    if (!course)
+      throw new NotFoundException(`Formation ${courseId} non trouvée`);
 
+    isAdmin = await this.subscriptions.isAdmin(userId);
     if (!isAdmin && course.instructorId !== userId) {
-      throw new ForbiddenException("Action non autorisée.");
+      throw new ForbiddenException('Action non autorisée.');
     }
 
+    await this.subscriptions.assertCanPublish(userId);
     return this.prisma.academicModule.create({
       data: {
         courseId,
@@ -312,17 +388,23 @@ export class AcademicService {
     });
     if (!module) throw new NotFoundException(`Module ${moduleId} non trouvé`);
 
+    isAdmin = await this.subscriptions.isAdmin(userId);
     if (!isAdmin && module.course.instructorId !== userId) {
-      throw new ForbiddenException("Action non autorisée.");
+      throw new ForbiddenException('Action non autorisée.');
     }
 
+    await this.subscriptions.assertCanPublish(userId);
+    const contentUrl = await new MediaSourceOwnershipService(
+      this.prisma,
+      this.subscriptions,
+    ).resolve(dto.contentUrl, userId);
     return this.prisma.academicLesson.create({
       data: {
         moduleId,
         title: dto.title,
         description: dto.description,
         contentType: dto.contentType || 'VIDEO',
-        contentUrl: dto.contentUrl,
+        contentUrl,
         durationSeconds: dto.durationSeconds || 0,
         order: dto.order ?? 0,
         isFreePreview: dto.isFreePreview ?? false,
@@ -336,7 +418,16 @@ export class AcademicService {
     const course = await this.prisma.academicCourse.findUnique({
       where: { id: courseId },
     });
-    if (!course) throw new NotFoundException(`Formation ${courseId} non trouvée`);
+    if (!course)
+      throw new NotFoundException(`Formation ${courseId} non trouvée`);
+
+    const access = await this.getAccess(course, userId);
+    if (!course.isPublished && !access.isManager)
+      throw new NotFoundException('Formation non trouvée');
+    if (!access.hasAccess)
+      throw new ForbiddenException(
+        'Achetez cette formation avant de vous inscrire.',
+      );
 
     const existing = await this.prisma.courseEnrollment.findUnique({
       where: {
@@ -412,6 +503,13 @@ export class AcademicService {
       select: { id: true },
     });
 
+    if (!allLessons.some((lesson) => lesson.id === lessonId))
+      throw new NotFoundException('Leçon non trouvée dans cette formation.');
+    const course = await this.prisma.academicCourse.findUnique({
+      where: { id: courseId },
+    });
+    if (!course || !(await this.getAccess(course, userId)).hasAccess)
+      throw new ForbiddenException('Accès à cette formation refusé.');
     let completedList = [...enrollment.completedLessons];
     if (completed) {
       if (!completedList.includes(lessonId)) {

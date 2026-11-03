@@ -1,4 +1,5 @@
-﻿import { Module } from '@nestjs/common';
+﻿import { FinancialAdminGuard } from './financial-admin.guard';
+import { Module } from '@nestjs/common';
 import { MonetizationController } from './monetization.controller';
 import { MonetizationService } from './monetization.service';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -7,7 +8,7 @@ import { TaraModule } from '../tara/tara.module';
 @Module({
   imports: [PrismaModule, TaraModule],
   controllers: [MonetizationController],
-  providers: [MonetizationService],
+  providers: [MonetizationService, FinancialAdminGuard],
   exports: [MonetizationService],
 })
 export class MonetizationModule {}

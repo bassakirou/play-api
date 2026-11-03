@@ -20,6 +20,7 @@ import {
   CreateLessonDto,
   UpdateProgressDto,
 } from './dto/course.dto';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('academic')
@@ -33,7 +34,12 @@ export class AcademicController {
     @Query('search') search?: string,
     @Query('instructorId') instructorId?: string,
   ) {
-    return this.academicService.findAll({ category, level, search, instructorId });
+    return this.academicService.findAll({
+      category,
+      level,
+      search,
+      instructorId,
+    });
   }
 
   @Get('categories')
@@ -53,9 +59,13 @@ export class AcademicController {
     return this.academicService.getUserEnrollments(userId);
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('courses/:id')
-  findOne(@Param('id') id: string) {
-    return this.academicService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.academicService.findOne(
+      id,
+      req.user?.userId || req.user?.id || req.user?.sub,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

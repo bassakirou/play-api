@@ -44,6 +44,13 @@ export interface TaraTransactionStatusResponse {
   [key: string]: any;
 }
 
+export class TaraRequestRejectedError extends Error {}
+export class TaraLookupUnavailableError extends Error {
+  constructor(public readonly code: 'TRANSACTION_NOT_FOUND' | 'PROVIDER_UNAVAILABLE') {
+    super(code);
+  }
+}
+
 @Injectable()
 export class TaraService {
   private readonly logger = new Logger(TaraService.name);
@@ -81,26 +88,33 @@ export class TaraService {
     let clean = (phone || '').replace(/\D/g, '');
     if (clean.startsWith('00237')) clean = clean.substring(2);
     if (clean.startsWith('237') && clean.length === 12) return clean;
-    if (clean.length === 9 && (clean.startsWith('6') || clean.startsWith('2'))) {
+    if (
+      clean.length === 9 &&
+      (clean.startsWith('6') || clean.startsWith('2'))
+    ) {
       return '237' + clean;
     }
     return clean;
   }
 
-  private async taraPost<T>(path: string, payload: Record<string, any>): Promise<T> {
+  private async taraPost<T>(
+    path: string,
+    payload: Record<string, any>,
+    rejectBusinessFailure = true,
+  ): Promise<T> {
     const config = await this.getConfig();
     const apiKey = config.taraApiKey;
     const businessId = config.taraBusinessId;
     const baseUrl = config.taraBaseUrl?.trim() || this.defaultBaseUrl;
 
     if (!apiKey || !businessId) {
-      this.logger.warn('Clés API Tara non configurées. Requête simulée en mode Sandbox pour ' + path);
-      return {
-        status: 'SUCCESS',
-        message: 'SIMULATED_TEST_MODE',
-        vendor: 'SIMULATED_LOCAL',
-        simulated: true,
-      } as any;
+      throw new TaraRequestRejectedError(
+        'Configuration Tara incomplète. Aucun paiement envoyé.',
+      );
+    }
+    // Credentials may only be sent to the trusted provider origin.
+    if (new URL(baseUrl).origin !== 'https://www.dklo.co') {
+      throw new TaraRequestRejectedError('Origine Tara non autorisée.');
     }
 
     const url = baseUrl.replace(/\/+$/, '') + path;
@@ -109,6 +123,9 @@ export class TaraService {
       businessId,
       ...payload,
     };
+    const startedAt = Date.now();
+    const reference = typeof payload.productId === 'string' ? payload.productId : undefined;
+    this.logger.log({ event: 'tara.request', path, reference });
 
     try {
       const response = await fetch(url, {
@@ -118,28 +135,61 @@ export class TaraService {
           Authorization: 'Bearer ' + apiKey,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(path === '/mobilepay' ? 60_000 : 15_000),
+        redirect: 'error',
       });
 
       const data = (await response.json()) as any;
+      this.logger.log({
+        event: 'tara.response', path, reference,
+        httpStatus: response.status,
+        providerStatus: typeof data?.status === 'string' ? data.status.slice(0, 40) : 'UNKNOWN',
+        providerCode: typeof data?.message === 'string' && /^[A-Z_]{1,60}$/.test(data.message) ? data.message : undefined,
+        elapsedMs: Date.now() - startedAt,
+      });
 
-      if (!response.ok || (data.status && data.status.toUpperCase() === 'FAILURE')) {
-        this.logger.error('Erreur Tara ' + path + ': ' + (data.message || response.statusText));
+      if (!response.ok) throw new Error('Réponse HTTP Tara indéterminée.');
+      if (path === '/mobilepay' && rejectBusinessFailure && !['SUCCESS', 'PENDING', 'FAILURE', 'FAILED'].includes(String(data.status).toUpperCase())) {
+        throw new Error('Résultat Tara indéterminé.');
+      }
+      if (
+        rejectBusinessFailure &&
+        ['FAILURE', 'FAILED'].includes(String(data.status).toUpperCase())
+      ) {
+        throw new TaraRequestRejectedError('Tara a refusé la requête.');
       }
 
       return data as T;
     } catch (error: any) {
-      this.logger.error('Exception appel Tara ' + path + ': ' + error.message);
+      this.logger.error({ event: 'tara.error', path, reference,
+        elapsedMs: Date.now() - startedAt,
+        errorType: error instanceof Error ? error.name : 'UnknownError' });
       throw error;
     }
   }
 
-  async initiateMobilePay(request: TaraMobilePayRequest): Promise<TaraMobilePayResponse> {
+  async initiateMobilePay(
+    request: TaraMobilePayRequest,
+  ): Promise<TaraMobilePayResponse> {
     const config = await this.getConfig();
     const formattedPhone = this.normalizePhoneNumber(request.phoneNumber);
-    const finalWebhookUrl = config.taraWebhookUrl?.trim() || request.webHookUrl;
+    const localWebhook =
+      process.env.NODE_ENV !== 'production'
+        ? process.env.TARA_LOCAL_WEBHOOK_URL?.trim()
+        : undefined;
+    const finalWebhookUrl =
+      localWebhook || config.taraWebhookUrl?.trim() || request.webHookUrl;
     const finalReturnUrl = config.taraReturnUrl?.trim() || request.returnUrl;
 
+    if (!/^237[62]\d{8}$/.test(formattedPhone))
+      throw new TaraRequestRejectedError('Numéro camerounais invalide.');
+    if (
+      !Number.isSafeInteger(request.productPrice) ||
+      request.productPrice <= 0
+    )
+      throw new TaraRequestRejectedError('Montant invalide.');
+    if (!finalWebhookUrl?.startsWith('https://'))
+      throw new TaraRequestRejectedError('Webhook HTTPS requis.');
     return this.taraPost<TaraMobilePayResponse>('/mobilepay', {
       productId: request.productId,
       productName: request.productName,
@@ -151,14 +201,97 @@ export class TaraService {
     });
   }
 
-  async getTransactionStatus(productId: string): Promise<TaraTransactionStatusResponse> {
-    return this.taraPost<TaraTransactionStatusResponse>('/transactions/status', {
-      productId,
-    });
+  async getTransactionStatus(
+    productId: string,
+  ): Promise<TaraTransactionStatusResponse> {
+    const response = await this.taraPost<TaraTransactionStatusResponse>(
+      '/transactions/status',
+      {
+        productId,
+      },
+      false,
+    );
+    if (String(response.status).toUpperCase() === 'ERROR') {
+      throw new TaraLookupUnavailableError(response.message === 'TRANSACTION_NOT_FOUND' ? 'TRANSACTION_NOT_FOUND' : 'PROVIDER_UNAVAILABLE');
+    }
+    const object = (value: unknown): Record<string, any> | undefined => {
+      if (typeof value === 'string') {
+        try {
+          value = JSON.parse(value);
+        } catch {
+          return undefined;
+        }
+      }
+      return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, any>)
+        : undefined;
+    };
+    // The live API wraps payment evidence in JSON strings; envelope SUCCESS is
+    // lookup success, whereas payload/paymentData contain the collection state.
+    const payload = object(response.payload);
+    const data = object(response.paymentData);
+    if (!payload && !data) return response;
+    if (
+      payload?.productId &&
+      data?.productId &&
+      payload.productId !== data.productId
+    )
+      throw new Error('Inconsistent Tara payment references');
+    return {
+      productId: payload?.productId || data?.productId,
+      paymentId: payload?.paymentId
+        ? String(payload.paymentId)
+        : response.paymentId,
+      status:
+        String(response.status).toUpperCase() === 'SUCCESS'
+          ? String(
+              payload?.paymentStatus ||
+                payload?.status ||
+                data?.paymentStatus ||
+                'PENDING',
+            ).toUpperCase()
+          : String(response.status || 'PENDING').toUpperCase(),
+      // Original amount is the order price; amount can be net of operator fees.
+      amount:
+        payload?.originalAmount ??
+        data?.originalAmount ??
+        payload?.amount ??
+        data?.amount,
+      businessId: payload?.businessId || data?.businessId,
+      currency: payload?.currency || data?.currency || response.currency,
+      vendor: payload?.mobileOperator || data?.mobileOperator,
+    };
   }
 
-  async initiatePayout(request: TaraPayoutRequest): Promise<TaraPayoutResponse> {
-    const formattedPhone = this.normalizePhoneNumber(request.receiverPhoneNumber);
+  async findTransactionEvidence(
+    productId: string,
+    paymentId?: string,
+  ): Promise<TaraTransactionStatusResponse | undefined> {
+    // Bounded lookup; fail closed when Tara does not expose correlatable amount evidence.
+    const rows = await this.taraPost<any>('/transactionlist', {
+      start: 0,
+      size: 100,
+    });
+    const transactions = Array.isArray(rows)
+      ? rows
+      : Array.isArray(rows?.transactionList)
+        ? rows.transactionList
+        : [];
+    // Collection aggregates (totalAmount/realAmount) are not payment evidence.
+    return transactions.find(
+      (row) =>
+        row.amount != null &&
+        (row.productId === productId ||
+          (paymentId && String(row.paymentId) === paymentId)),
+    );
+  }
+
+  async initiatePayout(
+    request: TaraPayoutRequest,
+  ): Promise<TaraPayoutResponse> {
+    const formattedPhone = this.normalizePhoneNumber(
+      request.receiverPhoneNumber,
+    );
     return this.taraPost<TaraPayoutResponse>('/payout/create', {
       receiverName: request.receiverName,
       paymentMethod: request.paymentMethod,

@@ -34,6 +34,7 @@ import { TaraModule } from './tara/tara.module';
 import { MonetizationModule } from './monetization/monetization.module';
 import { VideoDeliveryModule } from './video-delivery/video-delivery.module';
 import { VideoObservabilityModule } from './video-observability/video-observability.module';
+import { ContentAccessModule } from './content-access/content-access.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { VideoObservabilityModule } from './video-observability/video-observabil
     }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    ContentAccessModule,
     StorageModule,
     AuthModule,
     MailModule,

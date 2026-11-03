@@ -1,3 +1,4 @@
+import { MediaSourceOwnershipService } from '../content-access/media-source-ownership.service';
 import {
   Controller,
   Get,
@@ -13,7 +14,14 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiConsumes,
+  ApiBody,
+  ApiQuery,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { MediaService } from './media.service';
 import { CreateMediaAssetDto } from './dto/create-media-asset.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -23,14 +31,24 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 @Controller('media')
 export class MediaController {
-  constructor(private readonly mediaService: MediaService) {}
+  constructor(
+    private readonly mediaService: MediaService,
+    private readonly sources: MediaSourceOwnershipService,
+  ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Lister les médias de la bibliothèque avec isolation utilisateur stricte' })
-  @ApiQuery({ name: 'type', required: false, enum: ['all', 'audio', 'video', 'image'] })
+  @ApiOperation({
+    summary:
+      'Lister les médias de la bibliothèque avec isolation utilisateur stricte',
+  })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    enum: ['all', 'audio', 'video', 'image'],
+  })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'userId', required: false })
-  findAll(
+  async findAll(
     @Query('type') type?: string,
     @Query('search') search?: string,
     @Query('userId') queryUserId?: string,
@@ -38,18 +56,21 @@ export class MediaController {
   ) {
     const callerRole = req?.user?.role;
     const callerId = req?.user?.userId || req?.user?.id || req?.user?.sub;
-    const isAdmin = callerRole === 'ADMIN' || callerRole === 'SUPER_ADMIN';
+    const isAdmin = await this.sources.isAdmin(callerId);
 
     // If caller is NOT an admin, they can ONLY see their own media assets
-    const effectiveUserId = isAdmin ? (queryUserId || undefined) : callerId;
+    const effectiveUserId = isAdmin ? queryUserId || undefined : callerId;
     return this.mediaService.findAll({ type, search, userId: effectiveUserId });
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Détail d’un média par son ID' })
-  findOne(@Param('id') id: string, @Req() req: any) {
-    const admin = ['ADMIN', 'SUPER_ADMIN'].includes(req.user?.role);
-    return this.mediaService.findOne(id, admin ? undefined : req.user?.userId || req.user?.id);
+  async findOne(@Param('id') id: string, @Req() req: any) {
+    const admin = await this.sources.isAdmin(req.user?.userId || req.user?.id);
+    return this.mediaService.findOne(
+      id,
+      admin ? undefined : req.user?.userId || req.user?.id,
+    );
   }
 
   @Post('upload')
@@ -60,7 +81,10 @@ export class MediaController {
     }),
   )
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Téléverser un fichier média (audio, vidéo, image) dans la bibliothèque' })
+  @ApiOperation({
+    summary:
+      'Téléverser un fichier média (audio, vidéo, image) dans la bibliothèque',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -83,28 +107,36 @@ export class MediaController {
   ) {
     const callerRole = req?.user?.role;
     const callerId = req?.user?.userId || req?.user?.id || req?.user?.sub;
-    const isAdmin = callerRole === 'ADMIN' || callerRole === 'SUPER_ADMIN';
-    const effectiveUserId = (isAdmin && bodyUserId) ? bodyUserId : callerId;
+    const isAdmin = await this.sources.isAdmin(callerId);
+    const effectiveUserId = isAdmin && bodyUserId ? bodyUserId : callerId;
     const parsedDuration = duration ? Number(duration) : undefined;
-    return this.mediaService.uploadAndCreate(file, { title, type, duration: parsedDuration }, effectiveUserId);
+    return this.mediaService.uploadAndCreate(
+      file,
+      { title, type, duration: parsedDuration },
+      effectiveUserId,
+    );
   }
 
   @Post()
-  @ApiOperation({ summary: 'Créer manuellement un enregistrement de média dans la bibliothèque' })
-  create(@Body() dto: CreateMediaAssetDto, @Req() req?: any) {
+  @ApiOperation({
+    summary:
+      'Créer manuellement un enregistrement de média dans la bibliothèque',
+  })
+  async create(@Body() dto: CreateMediaAssetDto, @Req() req?: any) {
     const callerRole = req?.user?.role;
     const callerId = req?.user?.userId || req?.user?.id || req?.user?.sub;
-    const isAdmin = callerRole === 'ADMIN' || callerRole === 'SUPER_ADMIN';
-    const effectiveUserId = (isAdmin && dto.userId) ? dto.userId : callerId;
-    return this.mediaService.create(dto, effectiveUserId);
+    const isAdmin = await this.sources.isAdmin(callerId);
+    const effectiveUserId = isAdmin && dto.userId ? dto.userId : callerId;
+    const fileUrl = await this.sources.resolve(dto.fileUrl, callerId);
+    return this.mediaService.create({ ...dto, fileUrl }, effectiveUserId);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Supprimer un média de la bibliothèque' })
-  delete(@Param('id') id: string, @Req() req?: any) {
+  async delete(@Param('id') id: string, @Req() req?: any) {
     const callerRole = req?.user?.role;
     const callerId = req?.user?.userId || req?.user?.id || req?.user?.sub;
-    const isAdmin = callerRole === 'ADMIN' || callerRole === 'SUPER_ADMIN';
+    const isAdmin = await this.sources.isAdmin(callerId);
     return this.mediaService.delete(id, isAdmin ? undefined : callerId);
   }
 }

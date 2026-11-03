@@ -6,8 +6,9 @@ import {
   ForbiddenException,
   OnModuleInit,
 } from '@nestjs/common';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { TaraService } from '../tara/tara.service';
+import { TaraService, TaraRequestRejectedError } from '../tara/tara.service';
 import {
   UpdateMonetizationConfigDto,
   CreateGiftCatalogDto,
@@ -33,12 +34,54 @@ export class MonetizationService implements OnModuleInit {
       const count = await this.prisma.giftCatalog.count();
       if (count === 0) {
         const defaults = [
-          { name: 'LION', label: 'Lion Royal', amount: 100000, iconUrl: '/gifts/lion.png', description: 'Symbole de puissance, royauté et fierté ancestrale', order: 1 },
-          { name: 'BAOBAB', label: 'Baobab Sacré', amount: 25000, iconUrl: '/gifts/baobab.png', description: 'Symbole de longévité, sagesse et ancrage', order: 2 },
-          { name: 'MASQUE', label: 'Masque Cérémoniel', amount: 10000, iconUrl: '/gifts/mask.png', description: 'Symbole des ancêtres et de transmission', order: 3 },
-          { name: 'DJEMBE', label: 'Djembé Rythmique', amount: 5000, iconUrl: '/gifts/djembe.png', description: 'Symbole du battement de cœur de l’Afrique', order: 4 },
-          { name: 'TORTUE', label: 'Tortue de la Sagesse', amount: 2000, iconUrl: '/gifts/turtle.png', description: 'Symbole de patience, protection et persévérance', order: 5 },
-          { name: 'CAURIS', label: 'Cauris Sacré', amount: 500, iconUrl: '/gifts/cowrie.png', description: 'Symbole de prospérité, divination et bénédiction', order: 6 },
+          {
+            name: 'LION',
+            label: 'Lion Royal',
+            amount: 100000,
+            iconUrl: '/gifts/lion.png',
+            description: 'Symbole de puissance, royauté et fierté ancestrale',
+            order: 1,
+          },
+          {
+            name: 'BAOBAB',
+            label: 'Baobab Sacré',
+            amount: 25000,
+            iconUrl: '/gifts/baobab.png',
+            description: 'Symbole de longévité, sagesse et ancrage',
+            order: 2,
+          },
+          {
+            name: 'MASQUE',
+            label: 'Masque Cérémoniel',
+            amount: 10000,
+            iconUrl: '/gifts/mask.png',
+            description: 'Symbole des ancêtres et de transmission',
+            order: 3,
+          },
+          {
+            name: 'DJEMBE',
+            label: 'Djembé Rythmique',
+            amount: 5000,
+            iconUrl: '/gifts/djembe.png',
+            description: 'Symbole du battement de cœur de l’Afrique',
+            order: 4,
+          },
+          {
+            name: 'TORTUE',
+            label: 'Tortue de la Sagesse',
+            amount: 2000,
+            iconUrl: '/gifts/turtle.png',
+            description: 'Symbole de patience, protection et persévérance',
+            order: 5,
+          },
+          {
+            name: 'CAURIS',
+            label: 'Cauris Sacré',
+            amount: 500,
+            iconUrl: '/gifts/cowrie.png',
+            description: 'Symbole de prospérité, divination et bénédiction',
+            order: 6,
+          },
         ];
         for (const item of defaults) {
           await this.prisma.giftCatalog.create({ data: item });
@@ -46,7 +89,9 @@ export class MonetizationService implements OnModuleInit {
         this.logger.log('Default African cosmogony gifts seeded successfully');
       }
     } catch (err) {
-      this.logger.warn('Could not seed default gifts: ' + (err as any)?.message);
+      this.logger.warn(
+        'Could not seed default gifts: ' + (err as any)?.message,
+      );
     }
   }
 
@@ -54,15 +99,41 @@ export class MonetizationService implements OnModuleInit {
     return this.taraService.getConfig();
   }
 
+  async getAdminConfig() {
+    const { taraApiKey, taraWebhookSecret, ...config } = await this.getConfig();
+    return {
+      ...config,
+      taraApiKeyConfigured: Boolean(taraApiKey),
+      taraWebhookSecretConfigured: Boolean(taraWebhookSecret),
+    };
+  }
+
+  async isAdmin(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { role: true },
+    });
+    return Boolean(
+      user &&
+      [user.role?.name, ...(user.systemRoles || [])].some((role) =>
+        ['ADMIN', 'SUPER_ADMIN'].includes(role),
+      ),
+    );
+  }
+
   async updateConfig(dto: UpdateMonetizationConfigDto) {
-    return this.prisma.monetizationConfig.upsert({
+    const update = { ...dto };
+    if (!update.taraApiKey) delete update.taraApiKey;
+    if (!update.taraWebhookSecret) delete update.taraWebhookSecret;
+    await this.prisma.monetizationConfig.upsert({
       where: { id: 'default' },
-      update: dto,
+      update,
       create: {
         id: 'default',
-        ...dto,
+        ...update,
       },
     });
+    return this.getAdminConfig();
   }
 
   async getGiftCatalog(onlyActive = true) {
@@ -115,7 +186,8 @@ export class MonetizationService implements OnModuleInit {
           label: 'Cauris Sacré',
           amount: 500,
           iconUrl: '/assets/gifts/cauris.svg',
-          description: "Symbole ancestral de prospérité et bénédiction en Afrique.",
+          description:
+            'Symbole ancestral de prospérité et bénédiction en Afrique.',
           order: 1,
         },
         {
@@ -166,10 +238,43 @@ export class MonetizationService implements OnModuleInit {
     }
   }
 
-  async initiatePurchase(userId: string, dto: InitiatePurchaseDto, hostBaseUrl: string) {
+  async initiatePurchase(
+    userId: string,
+    dto: InitiatePurchaseDto,
+    hostBaseUrl: string,
+  ) {
+    const requestProductId = dto.requestId
+      ? 'PUR-' +
+        createHash('sha256')
+          .update(userId + ':' + dto.requestId)
+          .digest('hex')
+      : undefined;
+    if (requestProductId) {
+      const existing = await this.prisma.transaction.findFirst({
+        where: { productId: requestProductId, userId },
+      });
+      if (existing) {
+        if (
+          existing.contentId !== dto.contentId ||
+          existing.contentType !== dto.contentType
+        )
+          throw new BadRequestException('Identifiant de demande déjà utilisé.');
+        return {
+          transactionId: existing.id,
+          productId: existing.productId,
+          amount: existing.amount,
+          status: existing.status,
+          reused: true,
+          providerStatus: (existing.metadata as any)?.providerStatus || 'UNKNOWN',
+          ussdCode: (existing.metadata as any)?.ussdCode,
+          authUrl: (existing.metadata as any)?.authUrl,
+        };
+      }
+    }
     let contentTitle = '';
     let contentPrice = 0;
     let beneficiaryArtistId: string | null = null;
+    let beneficiaryUserId: string | null = null;
 
     if (dto.contentType === 'SONG') {
       const song = await this.prisma.song.findUnique({
@@ -181,8 +286,9 @@ export class MonetizationService implements OnModuleInit {
         throw new BadRequestException('Ce contenu est gratuit.');
       }
       contentTitle = song.title;
-      contentPrice = song.discountPrice && song.discountPrice > 0 ? song.discountPrice : song.price;
+      contentPrice = this.purchasePrice(song.price, song.discountPrice);
       beneficiaryArtistId = song.artists[0]?.id || null;
+      beneficiaryUserId = song.artists[0]?.userId || null;
     } else if (dto.contentType === 'ALBUM') {
       const album = await this.prisma.album.findUnique({
         where: { id: dto.contentId },
@@ -192,7 +298,7 @@ export class MonetizationService implements OnModuleInit {
         throw new BadRequestException('Cet album est gratuit.');
       }
       contentTitle = album.title;
-      contentPrice = album.discountPrice && album.discountPrice > 0 ? album.discountPrice : album.price;
+      contentPrice = this.purchasePrice(album.price, album.discountPrice);
       beneficiaryArtistId = album.artistId;
     } else if (dto.contentType === 'VIDEO') {
       const video = await this.prisma.video.findUnique({
@@ -204,8 +310,9 @@ export class MonetizationService implements OnModuleInit {
         throw new BadRequestException('Cette vidéo est gratuite.');
       }
       contentTitle = video.title;
-      contentPrice = video.discountPrice && video.discountPrice > 0 ? video.discountPrice : video.price;
+      contentPrice = this.purchasePrice(video.price, video.discountPrice);
       beneficiaryArtistId = video.artists[0]?.id || null;
+      beneficiaryUserId = video.userId || video.artists[0]?.userId || null;
     } else if (dto.contentType === 'AUDIOBOOK') {
       const book = await this.prisma.audiobook.findUnique({
         where: { id: dto.contentId },
@@ -216,11 +323,36 @@ export class MonetizationService implements OnModuleInit {
         throw new BadRequestException('Ce livre audio est gratuit.');
       }
       contentTitle = book.title;
-      contentPrice = book.discountPrice && book.discountPrice > 0 ? book.discountPrice : book.price;
+      contentPrice = this.purchasePrice(book.price, book.discountPrice);
       beneficiaryArtistId = book.authorUser?.artistProfile?.id || null;
+      beneficiaryUserId = book.authorUser?.id || null;
+    } else if (dto.contentType === 'COURSE') {
+      const course = await this.prisma.academicCourse.findUnique({
+        where: { id: dto.contentId },
+      });
+      if (!course || !course.isPublished)
+        throw new NotFoundException('Formation introuvable.');
+      if (!course.isMonetized || course.price <= 0)
+        throw new BadRequestException('Cette formation est gratuite.');
+      contentTitle = course.title;
+      contentPrice = this.purchasePrice(course.price, course.discountPrice);
+      beneficiaryUserId = course.instructorId;
     } else {
       throw new BadRequestException('Type de contenu invalide.');
     }
+
+    if (!beneficiaryUserId && beneficiaryArtistId) {
+      beneficiaryUserId =
+        (
+          await this.prisma.artist.findUnique({
+            where: { id: beneficiaryArtistId },
+          })
+        )?.userId || null;
+    }
+    if (!beneficiaryUserId)
+      throw new BadRequestException('Compte bénéficiaire non défini.');
+    if (!Number.isSafeInteger(contentPrice) || contentPrice <= 0)
+      throw new BadRequestException('Prix invalide.');
 
     const alreadyBought = await this.prisma.userPurchasedContent.findUnique({
       where: {
@@ -236,41 +368,83 @@ export class MonetizationService implements OnModuleInit {
     }
 
     const config = await this.getConfig();
-    const platformFee = Math.round((contentPrice * config.platformFeePercent) / 100);
+    const platformFee = Math.round(
+      (contentPrice * config.platformFeePercent) / 100,
+    );
     const creatorShare = contentPrice - platformFee;
-    const productId = 'PUR-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+    const productId = requestProductId || 'PUR-' + randomUUID();
 
-    const transaction = await this.prisma.transaction.create({
-      data: {
-        productId,
-        userId,
-        type: 'CONTENT_PURCHASE',
-        amount: contentPrice,
-        platformFee,
-        creatorShare,
-        status: 'PENDING',
-        phoneNumber: this.taraService.normalizePhoneNumber(dto.phoneNumber),
-        beneficiaryArtistId,
-        contentId: dto.contentId,
-        contentType: dto.contentType,
-        metadata: {
-          contentTitle,
+    let transaction;
+    try {
+      transaction = await this.prisma.transaction.create({
+        data: {
+          productId,
+          userId,
+          type: 'CONTENT_PURCHASE',
+          amount: contentPrice,
+          platformFee,
+          creatorShare,
+          status: 'PENDING',
+          phoneNumber: this.taraService.normalizePhoneNumber(dto.phoneNumber),
+          beneficiaryArtistId,
+          beneficiaryUserId,
+          contentId: dto.contentId,
+          contentType: dto.contentType,
+          metadata: {
+            contentTitle,
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if ((error as any)?.code !== 'P2002' || !requestProductId) throw error;
+      const existing = await this.prisma.transaction.findFirst({
+        where: { productId: requestProductId, userId },
+      });
+      if (!existing) throw error;
+      return {
+        transactionId: existing.id,
+        productId: existing.productId,
+        amount: existing.amount,
+        status: existing.status,
+        reused: true,
+          providerStatus: (existing.metadata as any)?.providerStatus || 'UNKNOWN',
+          ussdCode: (existing.metadata as any)?.ussdCode,
+          authUrl: (existing.metadata as any)?.authUrl,
+      };
+    }
 
     const webHookUrl = hostBaseUrl + '/monetization/webhook/tara';
-    const taraRes = await this.taraService.initiateMobilePay({
-      productId,
-      productName: 'PyramidPlay - ' + contentTitle,
-      productPrice: contentPrice,
-      phoneNumber: dto.phoneNumber,
-      webHookUrl,
-    });
+    const taraRes = await this.taraService
+      .initiateMobilePay({
+        productId,
+        productName: 'PyramidPlay - ' + contentTitle,
+        productPrice: contentPrice,
+        phoneNumber: dto.phoneNumber,
+        webHookUrl,
+      })
+      .catch(
+        (error) =>
+          ({
+            status:
+              error instanceof TaraRequestRejectedError ? 'FAILURE' : 'UNKNOWN',
+            message:
+              error instanceof TaraRequestRejectedError
+                ? 'Demande de paiement refusée.'
+                : 'Résultat de la demande incertain. Conservez la référence et vérifiez son statut sans relancer le paiement.',
+          }) as any,
+      );
 
-    if (taraRes.simulated) {
-      await this.completeTransaction(productId, taraRes.status || 'SUCCESS', 'SIM_PAYMENT_ID');
-    }
+    await this.prisma.transaction.update({
+      where: { id: transaction.id },
+      data: {
+        paymentId: taraRes.paymentId ? String(taraRes.paymentId) : undefined,
+        vendor: taraRes.vendor,
+        metadata: { ...(transaction.metadata as any || {}), providerStatus: taraRes.status || 'UNKNOWN',
+          ussdCode: typeof taraRes.ussdCode === 'string' ? taraRes.ussdCode : null,
+          authUrl: typeof taraRes.authUrl === 'string' ? taraRes.authUrl : null },
+        ...(taraRes.status === 'FAILURE' ? { status: 'FAILURE' } : {}),
+      },
+    });
 
     return {
       transactionId: transaction.id,
@@ -278,12 +452,47 @@ export class MonetizationService implements OnModuleInit {
       amount: contentPrice,
       ussdCode: taraRes.ussdCode,
       vendor: taraRes.vendor,
-      status: taraRes.status || 'PENDING',
+      status: taraRes.status === 'FAILURE' ? 'FAILURE' : 'PENDING',
+      providerStatus: taraRes.status,
+      authUrl: taraRes.authUrl,
+      simulated: false,
       message: taraRes.message || 'Validation USSD envoyée sur le mobile.',
     };
   }
 
   async sendGift(userId: string | null, dto: SendGiftDto, hostBaseUrl: string) {
+    if (!userId)
+      throw new ForbiddenException('Connectez-vous pour envoyer un cadeau.');
+    const productId = dto.requestId
+      ? 'GIFT-' +
+        createHash('sha256')
+          .update(userId + ':' + dto.requestId)
+          .digest('hex')
+      : 'GIFT-' + randomUUID();
+    const reuse = (existing: any) => {
+      const metadata = existing.metadata || {};
+      if (
+        metadata.giftCatalogId !== dto.giftCatalogId ||
+        metadata.recipientArtistId !== dto.recipientArtistId
+      )
+        throw new BadRequestException(
+          'Demande déjà utilisée pour un autre cadeau.',
+        );
+      return {
+        transactionId: existing.id,
+        productId: existing.productId,
+        amount: existing.amount,
+        status: existing.status,
+        reused: true,
+          providerStatus: (existing.metadata as any)?.providerStatus || 'UNKNOWN',
+          ussdCode: (existing.metadata as any)?.ussdCode,
+          authUrl: (existing.metadata as any)?.authUrl,
+      };
+    };
+    const existing = await this.prisma.transaction.findFirst({
+      where: { productId, userId },
+    });
+    if (existing) return reuse(existing);
     const gift = await this.prisma.giftCatalog.findUnique({
       where: { id: dto.giftCatalogId },
     });
@@ -298,29 +507,44 @@ export class MonetizationService implements OnModuleInit {
       throw new NotFoundException('Artiste bénéficiaire introuvable.');
     }
 
+    if (!artist.userId)
+      throw new BadRequestException('Compte bénéficiaire non défini.');
     const config = await this.getConfig();
-    const platformFee = Math.round((gift.amount * config.platformFeePercent) / 100);
+    const platformFee = Math.round(
+      (gift.amount * config.platformFeePercent) / 100,
+    );
     const creatorShare = gift.amount - platformFee;
-    const productId = 'GIFT-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
-
-    const transaction = await this.prisma.transaction.create({
-      data: {
-        productId,
-        userId,
-        type: 'GIFT',
-        amount: gift.amount,
-        platformFee,
-        creatorShare,
-        status: 'PENDING',
-        phoneNumber: this.taraService.normalizePhoneNumber(dto.phoneNumber),
-        beneficiaryArtistId: artist.id,
-        metadata: {
-          giftName: gift.name,
-          giftLabel: gift.label,
-          message: dto.message,
+    let transaction;
+    try {
+      transaction = await this.prisma.transaction.create({
+        data: {
+          productId,
+          userId,
+          type: 'GIFT',
+          amount: gift.amount,
+          platformFee,
+          creatorShare,
+          status: 'PENDING',
+          phoneNumber: this.taraService.normalizePhoneNumber(dto.phoneNumber),
+          beneficiaryArtistId: artist.id,
+          beneficiaryUserId: artist.userId,
+          metadata: {
+            giftName: gift.name,
+            giftLabel: gift.label,
+            giftCatalogId: gift.id,
+            recipientArtistId: artist.id,
+            message: dto.message,
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if ((error as any)?.code !== 'P2002') throw error;
+      const duplicate = await this.prisma.transaction.findFirst({
+        where: { productId, userId },
+      });
+      if (!duplicate) throw error;
+      return reuse(duplicate);
+    }
 
     await this.prisma.giftTransaction.create({
       data: {
@@ -333,17 +557,38 @@ export class MonetizationService implements OnModuleInit {
     });
 
     const webHookUrl = hostBaseUrl + '/monetization/webhook/tara';
-    const taraRes = await this.taraService.initiateMobilePay({
-      productId,
-      productName: 'Cadeau PyramidPlay - ' + gift.label + ' pour ' + artist.name,
-      productPrice: gift.amount,
-      phoneNumber: dto.phoneNumber,
-      webHookUrl,
-    });
+    const taraRes = await this.taraService
+      .initiateMobilePay({
+        productId,
+        productName:
+          'Cadeau PyramidPlay - ' + gift.label + ' pour ' + artist.name,
+        productPrice: gift.amount,
+        phoneNumber: dto.phoneNumber,
+        webHookUrl,
+      })
+      .catch(
+        (error) =>
+          ({
+            status:
+              error instanceof TaraRequestRejectedError ? 'FAILURE' : 'UNKNOWN',
+            message:
+              error instanceof TaraRequestRejectedError
+                ? 'Demande de paiement refusée.'
+                : 'Résultat de la demande incertain. Conservez la référence et vérifiez son statut sans relancer le paiement.',
+          }) as any,
+      );
 
-    if (taraRes.simulated) {
-      await this.completeTransaction(productId, taraRes.status || 'SUCCESS', 'SIM_GIFT_PAYMENT_ID');
-    }
+    await this.prisma.transaction.update({
+      where: { id: transaction.id },
+      data: {
+        paymentId: taraRes.paymentId ? String(taraRes.paymentId) : undefined,
+        vendor: taraRes.vendor,
+        metadata: { ...(transaction.metadata as any || {}), providerStatus: taraRes.status || 'UNKNOWN',
+          ussdCode: typeof taraRes.ussdCode === 'string' ? taraRes.ussdCode : null,
+          authUrl: typeof taraRes.authUrl === 'string' ? taraRes.authUrl : null },
+        ...(taraRes.status === 'FAILURE' ? { status: 'FAILURE' } : {}),
+      },
+    });
 
     return {
       transactionId: transaction.id,
@@ -351,12 +596,39 @@ export class MonetizationService implements OnModuleInit {
       amount: gift.amount,
       ussdCode: taraRes.ussdCode,
       vendor: taraRes.vendor,
-      status: taraRes.status || 'PENDING',
+      status: taraRes.status === 'FAILURE' ? 'FAILURE' : 'PENDING',
+      providerStatus: taraRes.status,
+      authUrl: taraRes.authUrl,
+      simulated: false,
       message: taraRes.message || 'Validation USSD envoyée sur le mobile.',
     };
   }
 
-  async subscribeAcademic(userId: string, dto: SubscribeAcademicDto, hostBaseUrl: string) {
+  async subscribeAcademic(
+    userId: string,
+    dto: SubscribeAcademicDto,
+    hostBaseUrl: string,
+  ) {
+    const productId = dto.requestId
+      ? 'SUB-' +
+        createHash('sha256')
+          .update(userId + ':' + dto.requestId)
+          .digest('hex')
+      : 'SUB-' + randomUUID();
+    const existing = await this.prisma.transaction.findFirst({
+      where: { productId, userId },
+    });
+    if (existing)
+      return {
+        transactionId: existing.id,
+        productId,
+        amount: existing.amount,
+        status: existing.status,
+        reused: true,
+          providerStatus: (existing.metadata as any)?.providerStatus || 'UNKNOWN',
+          ussdCode: (existing.metadata as any)?.ussdCode,
+          authUrl: (existing.metadata as any)?.authUrl,
+      };
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Utilisateur introuvable.');
 
@@ -371,47 +643,86 @@ export class MonetizationService implements OnModuleInit {
           targetRole: 'ACADEMIC',
           price: 5000,
           durationDays: 30,
-          description: 'Accès exclusif à la publication de formations, cours et contenus académiques sur PyramidPlay.',
+          description:
+            'Accès exclusif à la publication de formations, cours et contenus académiques sur PyramidPlay.',
           features: [
             'Publication de cours et vidéos académiques',
             'Publication de singles et livres audios académiques',
-            'Badge Créateur Académique Certifié',
+            'Acces a la publication academique',
             'Dashboard statistiques apprenants',
           ],
         },
       });
     }
 
-    const productId = 'SUB-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
-    const transaction = await this.prisma.transaction.create({
-      data: {
-        productId,
-        userId,
-        type: 'ACADEMIC_SUBSCRIPTION',
-        amount: plan.price,
-        platformFee: plan.price,
-        creatorShare: 0,
-        status: 'PENDING',
-        phoneNumber: this.taraService.normalizePhoneNumber(dto.phoneNumber),
-        metadata: {
-          planCode: plan.code,
-          planName: plan.name,
+    let transaction;
+    try {
+      transaction = await this.prisma.transaction.create({
+        data: {
+          productId,
+          userId,
+          type: 'ACADEMIC_SUBSCRIPTION',
+          amount: plan.price,
+          platformFee: plan.price,
+          creatorShare: 0,
+          status: 'PENDING',
+          phoneNumber: this.taraService.normalizePhoneNumber(dto.phoneNumber),
+          metadata: {
+            planCode: plan.code,
+            planName: plan.name,
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if ((error as any)?.code !== 'P2002') throw error;
+      const duplicate = await this.prisma.transaction.findFirst({
+        where: { productId, userId },
+      });
+      if (!duplicate) throw error;
+      return {
+        transactionId: duplicate.id,
+        productId,
+        amount: duplicate.amount,
+        status: duplicate.status,
+        reused: true,
+        providerStatus: (duplicate.metadata as any)?.providerStatus || 'UNKNOWN',
+        ussdCode: (duplicate.metadata as any)?.ussdCode,
+        authUrl: (duplicate.metadata as any)?.authUrl,
+      };
+    }
 
     const webHookUrl = hostBaseUrl + '/monetization/webhook/tara';
-    const taraRes = await this.taraService.initiateMobilePay({
-      productId,
-      productName: 'Abonnement PyramidPlay - ' + plan.name,
-      productPrice: plan.price,
-      phoneNumber: dto.phoneNumber,
-      webHookUrl,
-    });
+    const taraRes = await this.taraService
+      .initiateMobilePay({
+        productId,
+        productName: 'Abonnement PyramidPlay - ' + plan.name,
+        productPrice: plan.price,
+        phoneNumber: dto.phoneNumber,
+        webHookUrl,
+      })
+      .catch(
+        (error) =>
+          ({
+            status:
+              error instanceof TaraRequestRejectedError ? 'FAILURE' : 'UNKNOWN',
+            message:
+              error instanceof TaraRequestRejectedError
+                ? 'Demande de paiement refusée.'
+                : 'Résultat de la demande incertain. Conservez la référence et vérifiez son statut sans relancer le paiement.',
+          }) as any,
+      );
 
-    if (taraRes.simulated) {
-      await this.completeTransaction(productId, taraRes.status || 'SUCCESS', 'SIM_SUB_PAYMENT_ID');
-    }
+    await this.prisma.transaction.update({
+      where: { id: transaction.id },
+      data: {
+        paymentId: taraRes.paymentId ? String(taraRes.paymentId) : undefined,
+        vendor: taraRes.vendor,
+        metadata: { ...(transaction.metadata as any || {}), providerStatus: taraRes.status || 'UNKNOWN',
+          ussdCode: typeof taraRes.ussdCode === 'string' ? taraRes.ussdCode : null,
+          authUrl: typeof taraRes.authUrl === 'string' ? taraRes.authUrl : null },
+        ...(taraRes.status === 'FAILURE' ? { status: 'FAILURE' } : {}),
+      },
+    });
 
     return {
       transactionId: transaction.id,
@@ -419,40 +730,58 @@ export class MonetizationService implements OnModuleInit {
       amount: plan.price,
       ussdCode: taraRes.ussdCode,
       vendor: taraRes.vendor,
-      status: taraRes.status || 'PENDING',
+      status: taraRes.status === 'FAILURE' ? 'FAILURE' : 'PENDING',
+      providerStatus: taraRes.status,
+      authUrl: taraRes.authUrl,
+      simulated: false,
       message: taraRes.message || 'Validation USSD envoyée sur le mobile.',
     };
   }
 
-  async completeTransaction(productId: string, rawStatus: string, paymentId?: string, vendor?: string) {
-    const transaction = await this.prisma.transaction.findFirst({
-      where: { productId },
-      include: { giftTransaction: true },
-    });
-    if (!transaction) {
-      this.logger.warn('Transaction introuvable pour productId: ' + productId);
-      return;
+  private purchasePrice(price: number, discount?: number | null) {
+    if (
+      !Number.isSafeInteger(price) ||
+      price <= 0 ||
+      (discount != null &&
+        (!Number.isSafeInteger(discount) || discount <= 0 || discount >= price))
+    ) {
+      throw new BadRequestException('Prix ou remise invalide.');
     }
+    return discount ?? price;
+  }
 
-    if (transaction.status === 'SUCCESS') {
+  async completeTransaction(
+    productId: string,
+    rawStatus: string,
+    paymentId?: string,
+    vendor?: string,
+  ) {
+    const status = (rawStatus || '').toUpperCase();
+    if (!['SUCCESS', 'PAID', 'FAILURE', 'FAILED', 'CANCELLED'].includes(status))
       return;
-    }
-
-    const isSuccess = ['SUCCESS', 'PAID', 'API_ORDER_SUCESSFULL'].includes((rawStatus || '').toUpperCase());
-    const finalStatus = isSuccess ? 'SUCCESS' : 'FAILURE';
-
-    await this.prisma.transaction.update({
-      where: { id: transaction.id },
-      data: {
-        status: finalStatus,
-        paymentId: paymentId || transaction.paymentId,
-        vendor: vendor || transaction.vendor,
-      },
-    });
-
-    if (finalStatus === 'SUCCESS') {
-      if (transaction.type === 'CONTENT_PURCHASE' && transaction.userId && transaction.contentId && transaction.contentType) {
-        await this.prisma.userPurchasedContent.upsert({
+    return this.prisma.$transaction(async (db) => {
+      const transaction = await db.transaction.findFirst({
+        where: { productId },
+      });
+      if (!transaction || transaction.status === 'SUCCESS') return;
+      const success = ['SUCCESS', 'PAID'].includes(status);
+      // Compare and swap makes grant and status one atomic idempotent operation.
+      const claimed = await db.transaction.updateMany({
+        where: { id: transaction.id, status: 'PENDING' },
+        data: {
+          status: success ? 'SUCCESS' : 'FAILURE',
+          paymentId: paymentId || transaction.paymentId,
+          vendor: vendor || transaction.vendor,
+        },
+      });
+      if (!claimed.count || !success) return;
+      if (
+        transaction.type === 'CONTENT_PURCHASE' &&
+        transaction.userId &&
+        transaction.contentId &&
+        transaction.contentType
+      ) {
+        await db.userPurchasedContent.upsert({
           where: {
             userId_contentId_contentType: {
               userId: transaction.userId,
@@ -460,9 +789,7 @@ export class MonetizationService implements OnModuleInit {
               contentType: transaction.contentType,
             },
           },
-          update: {
-            paymentId: paymentId || transaction.paymentId,
-          },
+          update: {},
           create: {
             userId: transaction.userId,
             contentId: transaction.contentId,
@@ -472,51 +799,111 @@ export class MonetizationService implements OnModuleInit {
             title: (transaction.metadata as any)?.contentTitle || '',
           },
         });
-      } else if (transaction.type === 'ACADEMIC_SUBSCRIPTION' && transaction.userId) {
-        const plan = await this.prisma.subscriptionPlan.findUnique({
+      } else if (
+        transaction.type === 'ACADEMIC_SUBSCRIPTION' &&
+        transaction.userId
+      ) {
+        // Serialize concurrent renewals for this account before reading its expiry.
+        await db.$queryRaw`SELECT id FROM "User" WHERE id = ${transaction.userId} FOR UPDATE`;
+        const plan = await db.subscriptionPlan.findUnique({
           where: { code: 'ACADEMIC_MONTHLY' },
         });
-        if (plan) {
-          const startDate = new Date();
-          const endDate = new Date();
-          endDate.setDate(endDate.getDate() + plan.durationDays);
-
-          await this.prisma.userSubscription.create({
-            data: {
-              userId: transaction.userId,
-              planId: plan.id,
-              status: 'ACTIVE',
-              startDate,
-              endDate,
-              paymentId: paymentId || transaction.paymentId,
-            },
+        if (!plan) throw new BadRequestException('Plan introuvable.');
+        const previous = await db.userSubscription.findFirst({
+          where: {
+            userId: transaction.userId,
+            planId: plan.id,
+            status: 'ACTIVE',
+          },
+          orderBy: { endDate: 'desc' },
+        });
+        const startDate = new Date(
+          Math.max(Date.now(), previous?.endDate?.getTime() || 0),
+        );
+        await db.userSubscription.create({
+          data: {
+            userId: transaction.userId,
+            planId: plan.id,
+            transactionId: transaction.id,
+            status: 'ACTIVE',
+            startDate,
+            endDate: new Date(
+              startDate.getTime() + plan.durationDays * 86400000,
+            ),
+            paymentId: paymentId || transaction.paymentId,
+          },
+        });
+        const user = await db.user.findUnique({
+          where: { id: transaction.userId },
+        });
+        if (user && !user.systemRoles.includes('ACADEMIC'))
+          await db.user.update({
+            where: { id: user.id },
+            data: { systemRoles: { push: 'ACADEMIC' } },
           });
-
-          const user = await this.prisma.user.findUnique({ where: { id: transaction.userId } });
-          if (user) {
-            const currentRoles = user.systemRoles || [];
-            if (!currentRoles.includes('ACADEMIC')) {
-              await this.prisma.user.update({
-                where: { id: user.id },
-                data: {
-                  systemRoles: [...currentRoles, 'ACADEMIC'],
-                },
-              });
-            }
-          }
-        }
       }
+    });
+  }
+
+  private async reconcileTransaction(transaction: any) {
+    if (transaction.status !== 'PENDING') return;
+    const verified = await this.taraService.getTransactionStatus(
+      transaction.productId,
+    );
+    if (verified.productId !== transaction.productId)
+      throw new BadRequestException('Référence Tara non vérifiée.');
+    const config = await this.getConfig();
+    let evidence = verified;
+    if (
+      verified.amount == null &&
+      ['SUCCESS', 'PAID'].includes((verified.status || '').toUpperCase())
+    ) {
+      evidence =
+        (await this.taraService.findTransactionEvidence(
+          transaction.productId,
+          transaction.paymentId,
+        )) || verified;
     }
+    if (['SUCCESS', 'PAID'].includes((verified.status || '').toUpperCase())) {
+      if (
+        evidence.amount == null ||
+        !Number.isSafeInteger(Number(evidence.amount)) ||
+        Number(evidence.amount) !== transaction.amount
+      )
+        throw new BadRequestException('Montant Tara non vérifié.');
+      if (
+        (evidence.businessId &&
+          evidence.businessId !== config.taraBusinessId) ||
+        (evidence.currency &&
+          evidence.currency !== (transaction.currency || 'XAF'))
+      )
+        throw new BadRequestException('Business ou devise Tara incorrect.');
+      if (
+        transaction.paymentId &&
+        evidence.paymentId &&
+        transaction.paymentId !== String(evidence.paymentId)
+      )
+        throw new BadRequestException('Paiement Tara incorrect.');
+    }
+    await this.completeTransaction(
+      transaction.productId,
+      verified.status || 'PENDING',
+      evidence.paymentId ? String(evidence.paymentId) : transaction.paymentId,
+      evidence.vendor,
+    );
   }
 
   async handleTaraWebhook(body: any) {
-    this.logger.log('Webhook Tara reçu: ' + JSON.stringify(body));
-    const { productId, paymentId, status, vendor } = body;
-
-    if (productId) {
-      await this.completeTransaction(productId, status, paymentId ? String(paymentId) : undefined, vendor);
-    }
-    return { received: true };
+    // Correlate only by server-issued product ID or an already stored provider reference.
+    const productId =
+      typeof body?.productId === 'string' ? body.productId : undefined;
+    const paymentId = body?.paymentId ? String(body.paymentId) : undefined;
+    if (!productId && !paymentId) return { received: true, matched: false };
+    const transaction = await this.prisma.transaction.findFirst({
+      where: productId ? { productId } : { paymentId },
+    });
+    if (transaction) await this.reconcileTransaction(transaction);
+    return { received: true, matched: Boolean(transaction) };
   }
 
   async getCreatorMonetizationSummary(userId: string) {
@@ -524,37 +911,63 @@ export class MonetizationService implements OnModuleInit {
       where: { id: userId },
       include: { artistProfile: true },
     });
-    if (!user || !user.artistProfile) {
-      throw new ForbiddenException('Compte créateur ou profil artiste non trouvé.');
+    if (!user) {
+      throw new ForbiddenException(
+        'Compte créateur ou profil artiste non trouvé.',
+      );
     }
 
-    const artistId = user.artistProfile.id;
+    const artistId = user.artistProfile?.id || null;
     const config = await this.getConfig();
 
     const successfulTx = await this.prisma.transaction.findMany({
       where: {
-        beneficiaryArtistId: artistId,
+        OR: [
+          { beneficiaryUserId: userId },
+          ...(artistId
+            ? [{ beneficiaryUserId: null, beneficiaryArtistId: artistId }]
+            : []),
+        ],
         status: 'SUCCESS',
       },
     });
 
-    const totalEarnedGross = successfulTx.reduce((sum, tx) => sum + tx.amount, 0);
-    const totalCreatorShare = successfulTx.reduce((sum, tx) => sum + tx.creatorShare, 0);
+    const totalEarnedGross = successfulTx.reduce(
+      (sum, tx) => sum + tx.amount,
+      0,
+    );
+    const totalCreatorShare = successfulTx.reduce(
+      (sum, tx) => sum + tx.creatorShare,
+      0,
+    );
 
     const withdrawals = await this.prisma.withdrawalRequest.findMany({
-      where: { artistId },
+      where: { userId },
       orderBy: { requestedAt: 'desc' },
     });
 
     const totalWithdrawnOrPending = withdrawals
-      .filter((w) => ['PAID', 'APPROVED', 'PROCESSING', 'PENDING'].includes(w.status))
+      .filter((w) =>
+        ['PAID', 'APPROVED', 'PROCESSING', 'INDETERMINATE', 'PENDING'].includes(
+          w.status,
+        ),
+      )
       .reduce((sum, w) => sum + w.amountRequested, 0);
 
-    const availableBalance = Math.max(0, totalCreatorShare - totalWithdrawnOrPending);
+    const availableBalance = Math.max(
+      0,
+      totalCreatorShare - totalWithdrawnOrPending,
+    );
+
+    const [academicSubscription, academicPlan] = await Promise.all([
+      this.prisma.userSubscription.findFirst({ where: { userId, plan: { code: 'ACADEMIC_MONTHLY' } }, orderBy: { endDate: 'desc' } }),
+      this.prisma.subscriptionPlan.findUnique({ where: { code: 'ACADEMIC_MONTHLY' } }),
+    ]);
 
     return {
       artistId,
-      artistName: user.artistProfile.name,
+      artistName: user.artistProfile?.name || user.name,
+      userId,
       totalEarnedGross,
       totalCreatorShare,
       availableBalance,
@@ -563,35 +976,78 @@ export class MonetizationService implements OnModuleInit {
       operatorMomoFeePercent: config.operatorMomoFeePercent,
       withdrawals,
       isAcademic: user.systemRoles?.includes('ACADEMIC') || false,
+      academicSubscription,
+      academicPrice: academicPlan?.price ?? 5000,
     };
   }
 
   async requestWithdrawal(userId: string, dto: CreateWithdrawalRequestDto) {
-    const summary = await this.getCreatorMonetizationSummary(userId);
-    if (dto.amountRequested > summary.availableBalance) {
-      throw new BadRequestException('Solde disponible insuffisant pour ce montant.');
-    }
-
-    if (dto.amountRequested < summary.minWithdrawalAmount) {
-      throw new BadRequestException('Le montant minimum de retrait est de ' + summary.minWithdrawalAmount + ' XAF.');
-    }
-
-    const config = await this.getConfig();
-    const feePercent = dto.paymentMethod === 'ORANGE_MONEY' ? config.operatorOmFeePercent : config.operatorMomoFeePercent;
-    const operatorFees = Math.round((dto.amountRequested * feePercent) / 100);
-    const netAmount = dto.amountRequested - operatorFees;
-
-    return this.prisma.withdrawalRequest.create({
-      data: {
-        userId,
-        artistId: summary.artistId,
-        amountRequested: Math.round(dto.amountRequested),
-        operatorFees,
-        netAmount,
-        paymentMethod: dto.paymentMethod,
-        phoneNumber: this.taraService.normalizePhoneNumber(dto.phoneNumber),
-        status: 'PENDING',
-      },
+    if (
+      !Number.isSafeInteger(dto.amountRequested) ||
+      dto.amountRequested <= 0 ||
+      !['ORANGE_MONEY', 'MTN_MOBILE_MONEY'].includes(dto.paymentMethod)
+    )
+      throw new BadRequestException('Retrait invalide.');
+    if (
+      !/^237[62]\d{8}$/.test(
+        this.taraService.normalizePhoneNumber(dto.phoneNumber),
+      )
+    )
+      throw new BadRequestException('Numéro invalide.');
+    return this.prisma.$transaction(async (db) => {
+      // All requests for the same creator share this row lock, including across API replicas.
+      await db.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+      const user = await db.user.findUnique({
+        where: { id: userId },
+        include: { artistProfile: true },
+      });
+      if (!user) throw new ForbiddenException('Compte introuvable.');
+      const artistId = user.artistProfile?.id || null;
+      const earnings = await db.transaction.findMany({
+        where: {
+          status: 'SUCCESS',
+          OR: [
+            { beneficiaryUserId: userId },
+            ...(artistId
+              ? [{ beneficiaryUserId: null, beneficiaryArtistId: artistId }]
+              : []),
+          ],
+        },
+      });
+      const reserved = await db.withdrawalRequest.findMany({
+        where: {
+          userId,
+          status: {
+            in: ['PENDING', 'APPROVED', 'PROCESSING', 'INDETERMINATE', 'PAID'],
+          },
+        },
+      });
+      const balance =
+        earnings.reduce((sum, t) => sum + t.creatorShare, 0) -
+        reserved.reduce((sum, w) => sum + w.amountRequested, 0);
+      const config = await this.getConfig();
+      if (
+        dto.amountRequested > balance ||
+        dto.amountRequested < config.minWithdrawalAmount
+      )
+        throw new BadRequestException('Solde ou montant minimum insuffisant.');
+      const fee =
+        dto.paymentMethod === 'ORANGE_MONEY'
+          ? config.operatorOmFeePercent
+          : config.operatorMomoFeePercent;
+      const operatorFees = Math.round((dto.amountRequested * fee) / 100);
+      return db.withdrawalRequest.create({
+        data: {
+          userId,
+          artistId,
+          amountRequested: dto.amountRequested,
+          operatorFees,
+          netAmount: dto.amountRequested - operatorFees,
+          paymentMethod: dto.paymentMethod,
+          phoneNumber: this.taraService.normalizePhoneNumber(dto.phoneNumber),
+          status: 'PENDING',
+        },
+      });
     });
   }
 
@@ -606,57 +1062,72 @@ export class MonetizationService implements OnModuleInit {
     });
   }
 
-  async reviewWithdrawal(id: string, adminUserId: string, dto: ReviewWithdrawalDto) {
+  async reviewWithdrawal(
+    id: string,
+    adminUserId: string,
+    dto: ReviewWithdrawalDto,
+  ) {
     const request = await this.prisma.withdrawalRequest.findUnique({
       where: { id },
-      include: { artist: true },
+      include: { artist: true, user: true },
     });
-    if (!request) throw new NotFoundException('Demande de retrait introuvable.');
-
-    if (dto.action === 'REJECT') {
-      return this.prisma.withdrawalRequest.update({
-        where: { id },
-        data: {
-          status: 'REJECTED',
-          rejectionReason: dto.rejectionReason || "Refusé par l'administration.",
-          processedById: adminUserId,
-          processedAt: new Date(),
-        },
-      });
-    }
-
-    if (dto.action === 'APPROVE') {
-      return this.prisma.withdrawalRequest.update({
-        where: { id },
-        data: {
-          status: 'APPROVED',
-          processedById: adminUserId,
-          processedAt: new Date(),
-        },
-      });
-    }
-
-    if (dto.action === 'PAY_NOW') {
-      const taraPayout = await this.taraService.initiatePayout({
-        receiverName: request.artist.name,
+    if (!request) throw new NotFoundException('Demande introuvable.');
+    const next = {
+      REJECT: 'REJECTED',
+      APPROVE: 'APPROVED',
+      PAY_NOW: 'PROCESSING',
+    }[dto.action];
+    if (!next) throw new BadRequestException('Action invalide.');
+    const allowed =
+      dto.action === 'APPROVE' ? ['PENDING'] : ['PENDING', 'APPROVED'];
+    const claimed = await this.prisma.withdrawalRequest.updateMany({
+      where: { id, status: { in: allowed } },
+      data: {
+        status: next,
+        processedById: adminUserId,
+        processedAt: new Date(),
+        ...(dto.action === 'REJECT'
+          ? { rejectionReason: dto.rejectionReason || 'Refus administratif.' }
+          : {}),
+      },
+    });
+    if (!claimed.count)
+      throw new BadRequestException(
+        'Retrait déjà traité ou en attente de rapprochement.',
+      );
+    if (dto.action !== 'PAY_NOW')
+      return this.prisma.withdrawalRequest.findUnique({ where: { id } });
+    try {
+      const payout = await this.taraService.initiatePayout({
+        receiverName: request.user.name || request.artist?.name || 'Créateur',
         paymentMethod: request.paymentMethod,
         receiverPhoneNumber: request.phoneNumber,
         receiverId: request.phoneNumber,
         amount: request.netAmount,
       });
-
+      // /payout/create SUCCESS documents initiation only. Keep the balance reserved until settlement is independently confirmed.
       return this.prisma.withdrawalRequest.update({
         where: { id },
         data: {
-          status: 'PAID',
-          payoutId: taraPayout.payoutId || ('SIM-PO-' + Date.now()),
-          processedById: adminUserId,
-          processedAt: new Date(),
+          status: 'PROCESSING',
+          payoutId: payout.payoutId ? String(payout.payoutId) : undefined,
         },
       });
+    } catch (error) {
+      if (error instanceof TaraRequestRejectedError)
+        return this.prisma.withdrawalRequest.update({
+          where: { id },
+          data: {
+            status: 'REJECTED',
+            rejectionReason: 'Refus du prestataire.',
+          },
+        });
+      // A timeout or transport error may have occurred after money was sent: never automatically resend.
+      return this.prisma.withdrawalRequest.update({
+        where: { id },
+        data: { status: 'INDETERMINATE' },
+      });
     }
-
-    throw new BadRequestException('Action invalide.');
   }
 
   async getAdminStats() {
@@ -667,8 +1138,14 @@ export class MonetizationService implements OnModuleInit {
     });
 
     const totalVolume = transactions.reduce((acc, t) => acc + t.amount, 0);
-    const totalPlatformRevenue = transactions.reduce((acc, t) => acc + t.platformFee, 0);
-    const totalCreatorPayouts = transactions.reduce((acc, t) => acc + t.creatorShare, 0);
+    const totalPlatformRevenue = transactions.reduce(
+      (acc, t) => acc + t.platformFee,
+      0,
+    );
+    const totalCreatorPayouts = transactions.reduce(
+      (acc, t) => acc + t.creatorShare,
+      0,
+    );
 
     const byType = transactions.reduce((acc: any, t) => {
       acc[t.type] = (acc[t.type] || 0) + t.amount;
@@ -684,7 +1161,8 @@ export class MonetizationService implements OnModuleInit {
     const byArtistMap: Record<string, number> = {};
     transactions.forEach((t) => {
       if (t.beneficiaryArtistId) {
-        byArtistMap[t.beneficiaryArtistId] = (byArtistMap[t.beneficiaryArtistId] || 0) + t.creatorShare;
+        byArtistMap[t.beneficiaryArtistId] =
+          (byArtistMap[t.beneficiaryArtistId] || 0) + t.creatorShare;
       }
     });
 
@@ -758,6 +1236,10 @@ export class MonetizationService implements OnModuleInit {
             where: { id: p.contentId },
             include: { chapters: true },
           });
+        } else if (p.contentType === 'COURSE') {
+          details = await this.prisma.academicCourse.findUnique({
+            where: { id: p.contentId },
+          });
         }
         return {
           ...p,
@@ -769,17 +1251,65 @@ export class MonetizationService implements OnModuleInit {
     return enriched;
   }
 
-  async getTransactionStatus(id: string) {
+  private async reconcilePendingBounded(tx: any) {
+    if (tx.status !== 'PENDING') return;
+    // Persist the throttle and attempt count, avoiding an unbounded provider call on every poll.
+    await this.prisma.$transaction(async (db) => {
+      const rows = await db.$queryRaw<
+        any[]
+      >`SELECT id FROM "Transaction" WHERE id = ${tx.id} FOR UPDATE`;
+      if (!rows.length) return;
+      const fresh = await db.transaction.findFirst({ where: { id: tx.id } });
+      const metadata: any = fresh?.metadata || {};
+      if (
+        !fresh ||
+        fresh.status !== 'PENDING' ||
+        Date.now() - (metadata.reconciledAt || 0) < 30000
+      )
+        return;
+      await db.transaction.update({
+        where: { id: tx.id },
+        data: {
+          metadata: {
+            ...metadata,
+            reconciledAt: Date.now(),
+            reconcileAttempts: (metadata.reconcileAttempts || 0) + 1,
+          },
+        },
+      });
+      tx.reconcileClaimed = true;
+    });
+    if (tx.reconcileClaimed) {
+      try {
+        await this.reconcileTransaction(tx);
+        const fresh = await this.prisma.transaction.findFirst({ where: { id: tx.id } });
+        await this.prisma.transaction.update({ where: { id: tx.id }, data: { metadata: { ...(fresh?.metadata as any || {}), verificationError: null } } });
+      } catch (error) {
+        this.logger.warn('Rapprochement Tara différé.');
+        const code = error instanceof Error && error.message === 'TRANSACTION_NOT_FOUND' ? 'TRANSACTION_NOT_FOUND' : 'PROVIDER_UNAVAILABLE';
+        const fresh = await this.prisma.transaction.findFirst({ where: { id: tx.id } });
+        await this.prisma.transaction.update({ where: { id: tx.id }, data: { metadata: { ...(fresh?.metadata as any || {}), verificationError: code } } });
+      }
+    }
+  }
+
+  async getTransactionStatus(id: string, userId: string) {
     const tx = await this.prisma.transaction.findFirst({
       where: {
         OR: [{ id }, { productId: id }],
       },
     });
     if (!tx) throw new NotFoundException('Transaction introuvable.');
+    if (tx.userId !== userId && !(await this.isAdmin(userId)))
+      throw new ForbiddenException('Transaction privée.');
+    await this.reconcilePendingBounded(tx);
+    const current =
+      (await this.prisma.transaction.findFirst({ where: { id: tx.id } })) || tx;
     return {
       id: tx.id,
       productId: tx.productId,
-      status: tx.status,
+      status: current.status,
+      verificationError: current.status === 'PENDING' ? (current.metadata as any)?.verificationError || null : null,
       amount: tx.amount,
       type: tx.type,
     };

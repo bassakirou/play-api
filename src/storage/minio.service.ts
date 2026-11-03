@@ -76,16 +76,11 @@ export class MinioService implements OnModuleInit {
     }
   }
 
-  /**
-   * On API startup, list ALL existing MinIO buckets and apply
-   * a public-read policy to each one.  This is the definitive fix
-   * for old buckets (play-audio, play-videos, etc.) that were
-   * created without a public policy.
-   */
+  /** Revoke legacy public media policies; covers remain publicly readable. */
   async onModuleInit() {
     if (!this.client) return;
     try {
-      console.log('[MinioService] onModuleInit – fixing policies for ALL existing buckets …');
+      console.log('[MinioService] Applying private media bucket policies');
       const buckets = await this.client.listBuckets();
       for (const b of buckets) {
         await this.ensureBucketPolicy(b.name);
@@ -94,7 +89,7 @@ export class MinioService implements OnModuleInit {
         `[MinioService] onModuleInit – policies applied to ${buckets.length} bucket(s): ${buckets.map((b) => b.name).join(', ')}`,
       );
     } catch (err) {
-      console.error('[MinioService] onModuleInit – failed to list/fix buckets:', err.message);
+      throw new Error('Unable to secure media storage: ' + err.message);
     }
   }
 
@@ -114,30 +109,20 @@ export class MinioService implements OnModuleInit {
   }
 
   /**
-   * Apply a public-read S3 policy to a bucket (idempotent – skips
+   * Apply the media privacy policy to a bucket (idempotent – skips
    * if already applied during this process lifetime).
    */
   private async ensureBucketPolicy(name: string) {
     if (!this.client) return;
     if (this.policyApplied.has(name)) return;
-    try {
-      const policy = {
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Effect: 'Allow',
-            Principal: { AWS: ['*'] },
-            Action: ['s3:GetObject'],
-            Resource: [`arn:aws:s3:::${name}/*`],
-          },
-        ],
-      };
-      await this.client.setBucketPolicy(name, JSON.stringify(policy));
-      this.policyApplied.add(name);
-      console.log(`[MinioService] Public-read policy applied to bucket "${name}"`);
-    } catch (err) {
-      console.warn(`[MinioService] Could not set policy on bucket "${name}":`, err.message);
-    }
+    const imageBuckets = [this.getBucketName('images'), 'images', 'play-images'];
+    const isPublicImage = imageBuckets.includes(name);
+    const policy = isPublicImage ? JSON.stringify({
+      Version: '2012-10-17',
+      Statement: [{ Effect: 'Allow', Principal: { AWS: ['*'] }, Action: ['s3:GetObject'], Resource: [`arn:aws:s3:::${name}/*`] }],
+    }) : '';
+    await this.client.setBucketPolicy(name, policy);
+    this.policyApplied.add(name);
   }
 
   async ensureBucket(name: string) {
@@ -148,7 +133,7 @@ export class MinioService implements OnModuleInit {
         console.log(`[MinioService] Creating bucket: ${name}`);
         await this.client.makeBucket(name, 'us-east-1');
       }
-      // Ensure public read policy so browser audio/video elements and HLS streams can access files without 403
+      // Images stay public; audio and video require checked tickets.
       await this.ensureBucketPolicy(name);
     } catch (error) {
       console.error(
@@ -253,7 +238,7 @@ export class MinioService implements OnModuleInit {
       `[getObjectStream] Searching for object "${objectName}" — candidate buckets: [${candidateBuckets.join(', ')}], candidate objects: [${candidateObjects.join(', ')}]`,
     );
 
-    // Ensure public-read policies on all candidate buckets before trying
+    // Ensure private media policies on all candidate buckets before trying
     for (const b of candidateBuckets) {
       try {
         const exists = await this.client.bucketExists(b);

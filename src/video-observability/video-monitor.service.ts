@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { HostMetricsService } from './host-metrics.service';
 import { VideoSessionService } from './video-session.service';
 import { CloudflareUsageService } from './cloudflare-usage.service';
+import { MONITOR_THRESHOLDS } from './monitor-thresholds';
 
 @Injectable()
 export class VideoMonitorService implements OnModuleInit {
@@ -194,7 +195,7 @@ export class VideoMonitorService implements OnModuleInit {
   ) {
     const prefix = `host:${metrics.hostId}:`;
     this.cpuHot =
-      metrics.cpuPercent != null && metrics.cpuPercent >= 85
+      metrics.cpuPercent != null && metrics.cpuPercent >= MONITOR_THRESHOLDS.cpu
         ? this.cpuHot + 1
         : 0;
     const previous = await this.prisma.videoMonitorSample.aggregate({
@@ -218,20 +219,27 @@ export class VideoMonitorService implements OnModuleInit {
     await Promise.all([
       this.setAlert(
         prefix + 'cpu',
-        metrics.cpuPercent === null ? null : this.cpuHot >= 3,
+        metrics.cpuPercent === null
+          ? null
+          : this.cpuHot >= MONITOR_THRESHOLDS.cpuConsecutiveSamples,
         'warning',
         'CPU supérieur à 85 % pendant au moins trois relevés.',
       ),
       this.setAlert(
         prefix + 'memory',
-        metrics.memoryPercent === null ? null : metrics.memoryPercent >= 90,
+        metrics.memoryPercent === null
+          ? null
+          : metrics.memoryPercent >= MONITOR_THRESHOLDS.memory,
         'warning',
         'Mémoire utilisée à au moins 90 %.',
       ),
       this.setAlert(
         prefix + 'disk',
-        metrics.diskPercent === null ? null : metrics.diskPercent >= 85,
-        metrics.diskPercent != null && metrics.diskPercent >= 95
+        metrics.diskPercent === null
+          ? null
+          : metrics.diskPercent >= MONITOR_THRESHOLDS.disk,
+        metrics.diskPercent != null &&
+          metrics.diskPercent >= MONITOR_THRESHOLDS.diskCritical
           ? 'critical'
           : 'warning',
         'Un volume surveillé est rempli à au moins 85 %.',
@@ -240,7 +248,7 @@ export class VideoMonitorService implements OnModuleInit {
         prefix + 'network',
         metrics.networkCapacityMbps && metrics.networkTxBps != null
           ? (metrics.networkTxBps * 8) / 1e6 >=
-              metrics.networkCapacityMbps * 0.85
+              metrics.networkCapacityMbps * (MONITOR_THRESHOLDS.network / 100)
           : null,
         'warning',
         'Débit sortant supérieur à 85 % de la capacité renseignée.',
@@ -299,6 +307,19 @@ export class VideoMonitorService implements OnModuleInit {
     return { acknowledged: true };
   }
 
+  async alerts() {
+    const where = { resolvedAt: null, acknowledgedAt: null };
+    const [items, activeCount] = await Promise.all([
+      this.prisma.videoMonitorAlert.findMany({
+        where,
+        orderBy: { lastSeenAt: 'desc' },
+        take: 100,
+      }),
+      this.prisma.videoMonitorAlert.count({ where }),
+    ]);
+    return { items, activeCount };
+  }
+
   async overview(range: string, requestedHost?: string) {
     const hours = range === '7d' ? 168 : range === '24h' ? 24 : 1;
     const from = new Date(Date.now() - hours * 3_600_000);
@@ -341,6 +362,7 @@ export class VideoMonitorService implements OnModuleInit {
       }),
     ]);
     return {
+      thresholds: MONITOR_THRESHOLDS,
       hosts,
       hostId,
       latest,

@@ -11,8 +11,21 @@ export class AlbumsService {
   ) {}
 
   async create(createAlbumDto: CreateAlbumDto) {
-    const { title, year, coverUrl, description, artistId, artistIds, groupIds, isAcademic, isMonetized, price, discountPrice } = createAlbumDto as any;
-    const finalArtistId = artistId || (artistIds && artistIds.length ? artistIds[0] : null);
+    const {
+      title,
+      year,
+      coverUrl,
+      description,
+      artistId,
+      artistIds,
+      groupIds,
+      isAcademic,
+      isMonetized,
+      price,
+      discountPrice,
+    } = createAlbumDto as any;
+    const finalArtistId =
+      artistId || (artistIds && artistIds.length ? artistIds[0] : null);
     const data: any = {
       title,
       year: Number(year),
@@ -20,8 +33,14 @@ export class AlbumsService {
       description: description || null,
       isAcademic: Boolean(isAcademic),
       isMonetized: Boolean(isMonetized),
-      price: isMonetized && price !== null && price !== undefined ? Number(price) : null,
-      discountPrice: isMonetized && discountPrice !== null && discountPrice !== undefined ? Number(discountPrice) : null,
+      price:
+        isMonetized && price !== null && price !== undefined
+          ? Number(price)
+          : null,
+      discountPrice:
+        isMonetized && discountPrice !== null && discountPrice !== undefined
+          ? Number(discountPrice)
+          : null,
       ...(finalArtistId ? { artist: { connect: { id: finalArtistId } } } : {}),
       ...(groupIds && groupIds.length
         ? { groups: { connect: groupIds.map((gid: string) => ({ id: gid })) } }
@@ -34,17 +53,6 @@ export class AlbumsService {
   }
 
   async findAll(isAcademic?: boolean) {
-    // Nettoyage automatique des albums orphelins sans aucune chanson rattachée
-    const emptyAlbums = await this.prisma.album.findMany({
-      where: { songs: { none: {} } },
-      select: { id: true },
-    });
-    if (emptyAlbums.length > 0) {
-      await this.prisma.album.deleteMany({
-        where: { id: { in: emptyAlbums.map((a) => a.id) } },
-      });
-    }
-
     const where: any = {};
     if (isAcademic !== undefined) {
       where.isAcademic = isAcademic;
@@ -109,7 +117,8 @@ export class AlbumsService {
       data.price = data.price !== null ? Number(data.price) : null;
     }
     if (typeof data.discountPrice !== 'undefined') {
-      data.discountPrice = data.discountPrice !== null ? Number(data.discountPrice) : null;
+      data.discountPrice =
+        data.discountPrice !== null ? Number(data.discountPrice) : null;
     }
     return this.prisma.album.update({
       where: { id },

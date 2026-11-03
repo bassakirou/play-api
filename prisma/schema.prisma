@@ -388,6 +388,12 @@ model MediaAsset {
   user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 
+model VideoRoutingPolicy {
+  id        String @id @default("default")
+  mode      String @default("CLOUDFLARE_FIRST")
+  updatedAt DateTime @updatedAt
+}
+
 model VideoDelivery {
   id              String     @id @default(uuid())
   mediaAssetId    String     @unique
@@ -563,6 +569,9 @@ model AcademicCourse {
   studentsCount    Int                @default(0)
   isPublished      Boolean            @default(true)
   isFeatured       Boolean            @default(false)
+  isMonetized      Boolean            @default(false)
+  price            Int                @default(0)
+  discountPrice    Int?
   isBestseller     Boolean            @default(false)
   learningOutcomes String[]           @default([])
   requirements     String[]           @default([])
@@ -718,6 +727,8 @@ model UserSubscription {
   status     String           @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED
   startDate  DateTime         @default(now())
   endDate    DateTime
+  transactionId String?       @unique
+  transaction Transaction?    @relation(fields: [transactionId], references: [id], onDelete: SetNull)
   paymentId  String?          // Référence Tara
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
@@ -730,7 +741,7 @@ model UserSubscription {
 model Transaction {
   id                  String            @id @default(uuid())
   paymentId           String?           @unique // Identifiant unique renvoyé par Tara Money
-  productId           String            // Référence unique générée pour l'appel Tara
+  productId           String            @unique // Référence unique générée pour l'appel Tara
   userId              String?           // Utilisateur qui a payé
   type                String            // "CONTENT_PURCHASE" | "GIFT" | "ACADEMIC_SUBSCRIPTION"
   amount              Int               // Montant total payé en XAF
@@ -741,6 +752,7 @@ model Transaction {
   status              String            @default("PENDING") // PENDING, SUCCESS, FAILURE
   vendor              String?           // "ORANGE_CMR" | "MTN_MOMO_CMR"
   phoneNumber         String?           // Format 2376xxxxxxxx
+  beneficiaryUserId   String?
   beneficiaryArtistId String?           // Artiste / Créateur bénéficiaire du produit ou cadeau
   contentId           String?           // ID du Single, Album, Video ou Audiobook
   contentType         String?           // "SONG" | "ALBUM" | "VIDEO" | "AUDIOBOOK"
@@ -749,12 +761,14 @@ model Transaction {
   updatedAt           DateTime          @updatedAt
 
   user                User?             @relation("UserTransactions", fields: [userId], references: [id], onDelete: SetNull)
+  subscription        UserSubscription?
   giftTransaction     GiftTransaction?
 
   @@index([userId])
   @@index([status])
   @@index([type])
   @@index([beneficiaryArtistId])
+  @@index([beneficiaryUserId])
   @@index([productId])
 }
 
@@ -796,7 +810,7 @@ model GiftTransaction {
 model WithdrawalRequest {
   id              String    @id @default(uuid())
   userId          String    // Utilisateur créateur demandeur
-  artistId        String    // Artiste associé
+  artistId        String?   // Artiste associé
   amountRequested Int       // Montant brut demandé (ses 70% cumulés)
   operatorFees    Int       // Frais de transfert OM/MoMo supportés par le bénéficiaire
   netAmount       Int       // Montant net effectivement versé au créateur
@@ -812,7 +826,7 @@ model WithdrawalRequest {
   updatedAt       DateTime  @updatedAt
 
   user            User      @relation("UserWithdrawals", fields: [userId], references: [id], onDelete: Cascade)
-  artist          Artist    @relation("ArtistWithdrawals", fields: [artistId], references: [id], onDelete: Cascade)
+  artist          Artist?   @relation("ArtistWithdrawals", fields: [artistId], references: [id], onDelete: Cascade)
 
   @@index([artistId])
   @@index([status])

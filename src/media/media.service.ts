@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { isMediaStorageUrl } from '../content-access/media-storage-url';
 import { MinioService } from '../storage/minio.service';
 import { VercelBlobService } from '../storage/vercel-blob.service';
 import { HlsTranscoderService } from '../storage/hls-transcoder.service';
@@ -10,6 +11,20 @@ import { randomBytes } from 'crypto';
 
 @Injectable()
 export class MediaService {
+  /** Authoring tools may reopen legacy sources only for their verified owner. */
+  async findOwnedVideoSource(source: string, userId: string): Promise<string | undefined> {
+    if (!source || !userId) return undefined;
+    const videos = await this.prisma.video.findMany({ where: { userId }, include: { mediaAsset: true } });
+    const path = (value: string) => {
+      try { return decodeURIComponent(new URL(value, 'http://local.invalid').pathname); } catch { return undefined; }
+    };
+    for (const video of videos) {
+      const original = video.videoUrl.startsWith('pyramidplay:') ? video.mediaAsset?.fileUrl : video.videoUrl;
+      if (!original) continue;
+      if (source === `pyramidplay:video:${video.id}` || source === original || (isMediaStorageUrl(source) && isMediaStorageUrl(original) && path(source) === path(original))) return original;
+    }
+    return undefined;
+  }
   private readonly logger = new Logger(MediaService.name);
 
   constructor(

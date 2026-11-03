@@ -68,8 +68,9 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app as any, config);
   SwaggerModule.setup('api', app as any, document);
 
-  (app as any).useStaticAssets(join(process.cwd(), 'uploads'), {
-    prefix: '/uploads',
+  // Audio/video uploads are served only through a checked media ticket.
+  (app as any).useStaticAssets(join(process.cwd(), 'uploads', 'images'), {
+    prefix: '/uploads/images',
   });
 
   const preferredPort = process.env.PORT ? Number(process.env.PORT) : 3022;

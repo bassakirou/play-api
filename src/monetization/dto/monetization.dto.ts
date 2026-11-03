@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, IsBoolean, IsIn, IsInt, Min, Matches, IsUUID } from 'class-validator';
 
 export class UpdateMonetizationConfigDto {
   @IsString()
@@ -109,14 +109,24 @@ export class InitiatePurchaseDto {
 
   @IsString()
   @IsNotEmpty()
-  contentType: 'SONG' | 'ALBUM' | 'VIDEO' | 'AUDIOBOOK';
+  @IsIn(['SONG', 'ALBUM', 'VIDEO', 'AUDIOBOOK', 'COURSE'])
+  contentType: 'SONG' | 'ALBUM' | 'VIDEO' | 'AUDIOBOOK' | 'COURSE';
+
+  @IsOptional()
+  @IsUUID()
+  requestId?: string;
 
   @IsString()
   @IsNotEmpty()
+  @Matches(/^(?:\+?237|00237)?[62]\d{8}$/)
   phoneNumber: string; // 2376xxxxxxxx
 }
 
 export class SendGiftDto {
+  @IsOptional()
+  @IsUUID()
+  requestId?: string;
+
   @IsString()
   @IsNotEmpty()
   giftCatalogId: string;
@@ -127,6 +137,7 @@ export class SendGiftDto {
 
   @IsString()
   @IsNotEmpty()
+  @Matches(/^(?:\+?237|00237)?[62]\d{8}$/)
   phoneNumber: string; // 2376xxxxxxxx
 
   @IsString()
@@ -135,28 +146,38 @@ export class SendGiftDto {
 }
 
 export class SubscribeAcademicDto {
+  @IsOptional()
+  @IsUUID()
+  requestId?: string;
+
   @IsString()
   @IsNotEmpty()
+  @Matches(/^(?:\+?237|00237)?[62]\d{8}$/)
   phoneNumber: string; // 2376xxxxxxxx
 }
 
 export class CreateWithdrawalRequestDto {
   @IsNumber()
   @IsNotEmpty()
+  @IsInt()
+  @Min(1)
   amountRequested: number;
 
   @IsString()
   @IsNotEmpty()
+  @IsIn(['MTN_MOBILE_MONEY', 'ORANGE_MONEY'])
   paymentMethod: 'MTN_MOBILE_MONEY' | 'ORANGE_MONEY';
 
   @IsString()
   @IsNotEmpty()
+  @Matches(/^(?:\+?237|00237)?[62]\d{8}$/)
   phoneNumber: string; // 2376xxxxxxxx
 }
 
 export class ReviewWithdrawalDto {
   @IsString()
   @IsNotEmpty()
+  @IsIn(['APPROVE', 'REJECT', 'PAY_NOW'])
   action: 'APPROVE' | 'REJECT' | 'PAY_NOW';
 
   @IsString()

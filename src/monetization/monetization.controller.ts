@@ -11,6 +11,7 @@ import {
   Request,
   Req,
 } from '@nestjs/common';
+import { FinancialAdminGuard } from './financial-admin.guard';
 import { MonetizationService } from './monetization.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
@@ -28,31 +29,31 @@ import {
 export class MonetizationController {
   constructor(private readonly monetizationService: MonetizationService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Get('admin/config')
   async getConfig(@Request() req: any) {
-    return this.monetizationService.getConfig();
+    return this.monetizationService.getAdminConfig();
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Put('admin/config')
   async updateConfig(@Request() req: any, @Body() dto: UpdateMonetizationConfigDto) {
     return this.monetizationService.updateConfig(dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Get('admin/stats')
   async getAdminStats(@Request() req: any) {
     return this.monetizationService.getAdminStats();
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Get('admin/withdrawals')
   async getAllWithdrawals(@Request() req: any, @Query('status') status?: string) {
     return this.monetizationService.getAllWithdrawalRequests(status);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Post('admin/withdrawals/:id/review')
   async reviewWithdrawal(
     @Request() req: any,
@@ -68,26 +69,26 @@ export class MonetizationController {
     return this.monetizationService.getGiftCatalog(true);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Get('admin/gifts')
   async getAdminGiftCatalog() {
     await this.monetizationService.seedDefaultAfricanGifts();
     return this.monetizationService.getGiftCatalog(false);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Post('admin/gifts')
   async createGiftItem(@Body() dto: CreateGiftCatalogDto) {
     return this.monetizationService.createGiftItem(dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Put('admin/gifts/:id')
   async updateGiftItem(@Param('id') id: string, @Body() dto: UpdateGiftCatalogDto) {
     return this.monetizationService.updateGiftItem(id, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Delete('admin/gifts/:id')
   async deleteGiftItem(@Param('id') id: string) {
     return this.monetizationService.deleteGiftItem(id);
@@ -103,6 +104,7 @@ export class MonetizationController {
   }
 
   @Post('gifts/send')
+  @UseGuards(JwtAuthGuard)
   async sendGift(@Req() req: any, @Body() dto: SendGiftDto) {
     const userId = req.user?.id || null;
     const protocol = req.protocol || 'http';
@@ -143,8 +145,9 @@ export class MonetizationController {
     return this.monetizationService.handleTaraWebhook(body);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('transaction/:id/status')
-  async getTransactionStatus(@Param('id') id: string) {
-    return this.monetizationService.getTransactionStatus(id);
+  async getTransactionStatus(@Param('id') id: string, @Request() req: any) {
+    return this.monetizationService.getTransactionStatus(id, req.user.id);
   }
 }

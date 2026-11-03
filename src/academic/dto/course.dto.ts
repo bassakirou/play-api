@@ -5,9 +5,25 @@ import {
   IsBoolean,
   IsNumber,
   IsArray,
+  IsInt,
+  Min,
 } from 'class-validator';
 
 export class CreateCourseDto {
+  @IsBoolean()
+  @IsOptional()
+  isMonetized?: boolean;
+
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  price?: number;
+
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  discountPrice?: number;
+
   @IsString()
   @IsNotEmpty()
   title: string;
@@ -62,6 +78,20 @@ export class CreateCourseDto {
 }
 
 export class UpdateCourseDto {
+  @IsBoolean()
+  @IsOptional()
+  isMonetized?: boolean;
+
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  price?: number;
+
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  discountPrice?: number;
+
   @IsString()
   @IsOptional()
   title?: string;

@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsInt,
+  Min,
   IsUUID,
   IsArray,
   ArrayMinSize,
@@ -11,6 +12,23 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateSongDto {
+  @ApiProperty({ required: false })
+  @IsBoolean()
+  @IsOptional()
+  isMonetized?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  price?: number;
+
+  @ApiProperty({ required: false })
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  discountPrice?: number;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

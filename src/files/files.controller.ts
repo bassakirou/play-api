@@ -1,6 +1,7 @@
 /* eslint-disable no-empty */
 import {
   BadRequestException,
+  ForbiddenException,
   Controller,
   Get,
   Post,
@@ -12,9 +13,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
+import { LegacyMediaGuard } from '../content-access/legacy-media.guard';
+import { MediaSourceOwnershipService } from '../content-access/media-source-ownership.service';
+import { isMediaStorageUrl } from '../content-access/media-storage-url';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage, memoryStorage } from 'multer';
-import { extname, join } from 'path';
+import { extname, join, resolve, sep } from 'path';
 import { randomBytes } from 'crypto';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { MinioService } from '../storage/minio.service';
@@ -326,126 +331,69 @@ export class FilesController {
     private readonly blob: VercelBlobService,
     private readonly hlsTranscoder: HlsTranscoderService,
     private readonly mediaService: MediaService,
+    private readonly mediaSources: MediaSourceOwnershipService,
   ) { }
 
+  private async ownedVideoSource(source: string, req: any) {
+    const owned = await this.mediaService.findOwnedVideoSource(source, req.user.id);
+    const resolved = await this.mediaSources.resolve(owned || source, req.user.id, owned);
+    if (resolved && !isMediaStorageUrl(resolved)) throw new BadRequestException('Importez cette vidéo dans votre bibliothèque avant de la traiter');
+    return resolved;
+  }
+
   @Get('resolved-image')
-  async resolvedImage(
-    @Query('url') url: string,
-    @Req() req: any,
-    @Res() res: any,
-  ) {
-    if (!url) {
-      res.status(400).send('Missing url');
-      return;
-    }
+  async resolvedImage(@Query('url') url: string, @Req() req: any, @Res() res: any) {
+    if (typeof url !== 'string' || !url || url.length > 4096)
+      throw new BadRequestException('Source image invalide');
+    let decoded: string;
+    let parsed: URL;
     try {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      decoded = decodeURIComponent(url);
+      if (decoded.includes('\\') || decoded.includes('\0') || decoded.split(/[/?#]/).includes('..')) throw new Error();
+      parsed = new URL(url, 'http://local.invalid');
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+    } catch { throw new ForbiddenException('Source image invalide'); }
+    const path = decodeURIComponent(parsed.pathname);
+    if (/\.(?:mp3|mp4|m4a|m4v|aac|wav|ogg|opus|flac|webm|mov|ts|m3u8|pdf)$/i.test(path))
+      throw new ForbiddenException('Source image invalide');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
 
-      // 1. Direct S3 streaming via MinIO client
-      if (this.minio.isEnabled()) {
-        const match = url.match(/\/(images|play-images)\/([^?]+)(\?.*)?$/);
-        if (match && match[2]) {
-          const bucket = match[1];
-          const objectName = match[2];
-          try {
-            const { stream, stat } = await this.minio.getObjectStream(bucket, objectName);
-            if (stat?.metaData?.['content-type'] || stat?.contentType) {
-              res.setHeader('Content-Type', stat.metaData?.['content-type'] || stat.contentType);
-            } else if (objectName.endsWith('.png')) {
-              res.setHeader('Content-Type', 'image/png');
-            } else if (objectName.endsWith('.webp')) {
-              res.setHeader('Content-Type', 'image/webp');
-            } else {
-              res.setHeader('Content-Type', 'image/jpeg');
-            }
-            if (stat?.etag) {
-              res.setHeader('ETag', stat.etag);
-              if (req.headers['if-none-match'] === stat.etag) {
-                res.status(304).end();
-                return;
-              }
-            }
-            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-            res.status(200);
-            stream.pipe(res);
-            return;
-          } catch (err) {
-            console.warn('[resolvedImage] MinIO getObjectStream failed, trying HTTP fetch:', err.message);
-          }
-        }
+    if (isMediaStorageUrl(url) && !parsed.hostname.endsWith('.blob.vercel-storage.com')) {
+      if (path.startsWith('/uploads/images/')) {
+        const base = resolve(process.cwd(), 'uploads', 'images');
+        const file = resolve(base, path.slice('/uploads/images/'.length));
+        if (!file.startsWith(base + sep) || !existsSync(file) || !statSync(file).isFile())
+          throw new BadRequestException('Image introuvable');
+        if (!/\.(?:png|jpe?g|webp|gif|avif|svg|ico)$/i.test(file)) throw new ForbiddenException('Source image invalide');
+        res.type(extname(file));
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return createReadStream(file).pipe(res);
       }
-
-      // 1.5. Local disk check for /uploads/ files
-      if (url.includes('/uploads/')) {
-        const relativePath = url.substring(url.indexOf('/uploads/'));
-        const diskPath = join(process.cwd(), relativePath);
-        if (existsSync(diskPath)) {
-          if (diskPath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
-          else if (diskPath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
-          else res.setHeader('Content-Type', 'image/jpeg');
-          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-          res.status(200);
-          createReadStream(diskPath).pipe(res);
-          return;
-        }
-      }
-
-      // 2. HTTP fetch fallback
-      let target = url;
-      if (!target.startsWith('http://') && !target.startsWith('https://')) {
-        const publicUrl = process.env.MINIO_PUBLIC_URL || 'http://localhost:9000';
-        target = `${publicUrl.replace(/\/+$/, '')}/${target.replace(/^\/+/, '')}`;
-      }
-
-      const headers: Record<string, string> = {};
-      const range = req?.headers?.range;
-      if (typeof range === 'string' && range.length > 0) {
-        headers.Range = range;
-      }
-
-      const upstream = await fetch(target, { headers }).catch(() => null);
-
-      if (!upstream || upstream.status === 404) {
-        const pixel = Buffer.from(
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xh8cAAAAASUVORK5CYII=',
-          'base64',
-        );
-        res.status(200);
-        res.setHeader('content-type', 'image/png');
-        res.setHeader('content-length', String(pixel.length));
-        res.end(pixel);
-        return;
-      }
-
-      res.status(upstream.status);
-      const passHeaders = [
-        'content-type',
-        'content-length',
-        'accept-ranges',
-        'content-range',
-        'etag',
-        'last-modified',
-        'cache-control',
-      ];
-      for (const h of passHeaders) {
-        const v = upstream.headers.get(h);
-        if (v) res.setHeader(h, v);
-      }
-
-      if (!upstream.body) {
-        res.end();
-        return;
-      }
-
-      Readable.fromWeb(upstream.body as any).pipe(res);
-    } catch (err) {
-      console.error('[resolvedImage] Critical error:', err.message);
-      res.status(500).send(`Failed to resolve image: ${err.message}`);
+      const parts = /^\/([^/]+)\/(.+)$/.exec(path);
+      const allowedBuckets = [this.minio.getBucketName('images'), 'images', 'play-images'];
+      if (!parts || !allowedBuckets.includes(parts[1]) || !this.minio.isEnabled())
+        throw new ForbiddenException('Source image invalide');
+      const { stream, stat } = await this.minio.getObjectStream(parts[1], parts[2]);
+      const contentType = stat?.metaData?.['content-type'] || stat?.contentType;
+      if (contentType && !/^image\//i.test(contentType)) { stream.destroy(); throw new ForbiddenException('Source image invalide'); }
+      res.type(contentType || extname(parts[2]) || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return stream.pipe(res);
     }
+    // External covers must stay images, including when the remote URL redirects.
+    const upstream = await fetch(parsed, { redirect: 'error', signal: AbortSignal.timeout(15000) });
+    if (!upstream.ok || !/^image\//i.test(upstream.headers.get('content-type') || '') || !upstream.body) {
+      await upstream.body?.cancel();
+      throw new ForbiddenException('Source image invalide');
+    }
+    res.type(upstream.headers.get('content-type'));
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return Readable.fromWeb(upstream.body as any).pipe(res);
   }
 
   @Post('upload-audio')
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -519,7 +467,7 @@ export class FilesController {
       throw new BadRequestException('MinIO storage service is not enabled or file buffer missing');
     }
 
-    const userId = req?.body?.userId || req?.user?.id || req?.user?.sub || req?.user?.userId;
+    const userId = req?.user?.id || req?.user?.sub || req?.user?.userId;
     const ext = extname(file.originalname).toLowerCase().replace('.', '');
     const title = file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
     const calculatedDuration = fileBuffer ? getAudioDuration(fileBuffer) : 0;
@@ -549,6 +497,7 @@ export class FilesController {
   }
 
   @Post('upload-image')
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -642,7 +591,7 @@ export class FilesController {
       throw new BadRequestException('MinIO storage service is not enabled');
     }
 
-    const userId = req?.body?.userId || req?.user?.id || req?.user?.sub || req?.user?.userId;
+    const userId = req?.user?.id || req?.user?.sub || req?.user?.userId;
     const ext = extname(file.originalname).toLowerCase().replace('.', '');
     const title = file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
 
@@ -666,12 +615,13 @@ export class FilesController {
   }
 
   @Post('analyze-video')
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file', { storage: diskVideoStorage() }))
   async analyzeVideo(
     @UploadedFile() file?: Express.Multer.File,
     @Req() req?: any,
   ) {
-    const url = req?.body?.url;
+    const url = req?.body?.url ? await this.ownedVideoSource(req.body.url, req) : undefined;
     if (!file && url && (url.includes('/hls/') || url.endsWith('.m3u8'))) {
       const inspected = await this.hlsTranscoder.inspectVideoVariants(url);
       return inspected.analysis;
@@ -681,7 +631,7 @@ export class FilesController {
     let cleanupNeeded = false;
 
     if (!targetPath && req?.body?.url) {
-      const url = req.body.url;
+      const url = await this.ownedVideoSource(req.body.url, req);
       if (url.includes('/uploads/')) {
         const relativePath = url.substring(url.indexOf('/uploads/'));
         const diskPath = join(process.cwd(), relativePath);
@@ -729,23 +679,26 @@ export class FilesController {
   }
 
   @Post('inspect-video-variants')
+  @UseGuards(JwtAuthGuard)
   async inspectVideoVariantsPost(@Req() req: any) {
-    const url = req?.body?.url || req?.query?.url || '';
+    const url = await this.ownedVideoSource(req?.body?.url || req?.query?.url || '', req);
     return this.hlsTranscoder.inspectVideoVariants(url);
   }
 
   @Get('inspect-video-variants')
-  async inspectVideoVariantsGet(@Query('url') url: string) {
-    return this.hlsTranscoder.inspectVideoVariants(url || '');
+  @UseGuards(JwtAuthGuard)
+  async inspectVideoVariantsGet(@Query('url') url: string, @Req() req: any) {
+    return this.hlsTranscoder.inspectVideoVariants(await this.ownedVideoSource(url || '', req));
   }
 
   @Post('generate-video-variants')
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file', { storage: diskVideoStorage() }))
   async generateVideoVariants(
     @UploadedFile() file?: Express.Multer.File,
     @Req() req?: any,
   ) {
-    const url = req?.body?.url;
+    const url = req?.body?.url ? await this.ownedVideoSource(req.body.url, req) : undefined;
     if (!file && url && (url.includes('/hls/') || url.endsWith('.m3u8'))) {
       return this.hlsTranscoder.inspectVideoVariants(url);
     }
@@ -860,6 +813,7 @@ export class FilesController {
   }
 
   @Get('resolved-audio')
+  @UseGuards(OptionalJwtAuthGuard, LegacyMediaGuard)
   async resolvedAudio(@Query('url') url: string, @Req() req: any, @Res() res: any) {
     if (!url) {
       res.status(400).send('Missing url');
@@ -1093,6 +1047,7 @@ export class FilesController {
   }
 
   @Get('resolved-video')
+  @UseGuards(OptionalJwtAuthGuard, LegacyMediaGuard)
   async resolvedVideo(@Query('url') url: string, @Req() req: any, @Res() res: any) {
     if (!url) {
       res.status(400).send('Missing url');
@@ -1282,6 +1237,7 @@ export class FilesController {
   }
 
   @Post('blob-token')
+  @UseGuards(JwtAuthGuard)
   async getBlobToken(@Query('pathname') pathname: string) {
     if (!this.blob.isEnabled()) {
       return { error: 'Vercel Blob is not enabled' };

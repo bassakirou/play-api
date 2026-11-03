@@ -2,12 +2,31 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
+  IsBoolean,
   IsInt,
+  Min,
   IsUUID,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateAlbumDto {
+  @ApiProperty({ required: false })
+  @IsBoolean()
+  @IsOptional()
+  isMonetized?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  price?: number;
+
+  @ApiProperty({ required: false })
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  discountPrice?: number;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -34,6 +53,6 @@ export class CreateAlbumDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @IsBoolean()
   isAcademic?: boolean;
 }
-

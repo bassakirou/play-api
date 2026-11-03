@@ -241,24 +241,7 @@ export class AuthService {
   }
 
   async setupFirstAdmin(createUserDto: CreateUserDto) {
-    const users = await this.usersService.findAll();
-    console.log(`[AuthService] Nombre d'utilisateurs actuels: ${users.length}`);
-    if (users.length > 0) {
-      console.log(
-        '[AuthService] Liste des utilisateurs existants:',
-        users.map((u) => u.email),
-      );
-      throw new UnauthorizedException('Super Admin already exists');
-    }
-
-    console.log(
-      `[AuthService] Création du premier administrateur: ${createUserDto.email}`,
-    );
-
-    const user = await this.usersService.create({
-      ...createUserDto,
-      role: 'ADMIN',
-    });
+    const user = await this.usersService.createFirstAdmin(createUserDto);
 
     const payload = { email: user.email, sub: user.id, role: 'ADMIN' };
     return {

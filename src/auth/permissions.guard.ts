@@ -63,9 +63,6 @@ export class PermissionsGuard implements CanActivate {
       ? userWithPerms.systemRoles.map((r) => r.toUpperCase())
       : [];
 
-    if (userWithPerms.artistProfile && !systemRoles.includes('ARTIST')) {
-      systemRoles.push('ARTIST');
-    }
     if (userDbRole && !systemRoles.includes(userDbRole)) {
       systemRoles.push(userDbRole);
     }
@@ -78,7 +75,7 @@ export class PermissionsGuard implements CanActivate {
     const grantedPermissions = new Set<string>();
 
     // Rôle ARTIST : singles, albums, artistes, genres
-    if (systemRoles.includes('ARTIST') || userDbRole === 'ARTIST' || !!userWithPerms.artistProfile) {
+    if (systemRoles.includes('ARTIST') || userDbRole === 'ARTIST') {
       grantedPermissions.add('create:song');
       grantedPermissions.add('update:song');
       grantedPermissions.add('delete:song');

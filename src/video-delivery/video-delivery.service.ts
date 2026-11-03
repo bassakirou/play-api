@@ -5,10 +5,14 @@ import {
   Logger,
   NotFoundException,
   ServiceUnavailableException,
+  Optional,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { MinioService } from '../storage/minio.service';
+import { ContentAccessService } from '../content-access/content-access.service';
+import { isMediaStorageUrl } from '../content-access/media-storage-url';
+import { hostname } from 'node:os';
 import {
   CloudflareStreamService,
   StreamVideo,
@@ -22,6 +26,61 @@ const isAdmin = (caller?: DeliveryCaller) =>
 export class VideoDeliveryService {
   private readonly logger = new Logger(VideoDeliveryService.name);
   private running = false;
+  private failures = 0;
+  private circuitUntil = 0;
+
+  async routing() {
+    const policy = await this.prisma.videoRoutingPolicy.findUnique({ where: { id: 'default' } });
+    return { mode: policy?.mode || 'CLOUDFLARE_FIRST', circuitUntil: this.circuitUntil > Date.now() ? this.circuitUntil : null };
+  }
+
+  async setRouting(mode: string) {
+    if (!['CLOUDFLARE_FIRST', 'LOCAL_ONLY'].includes(mode)) throw new BadRequestException('Mode invalide');
+    return this.prisma.videoRoutingPolicy.upsert({ where: { id: 'default' }, create: { id: 'default', mode }, update: { mode } });
+  }
+
+  async migrationCandidates() {
+    return this.prisma.video.findMany({ where: { OR: [{ mediaAssetId: null }, { mediaAsset: { delivery: null } }] }, select: { id: true, title: true, duration: true }, orderBy: { createdAt: 'desc' }, take: 100 });
+  }
+
+  async migrate(videoId: string) {
+    if (!this.cloudflare.isEnabled()) throw new ServiceUnavailableException('Cloudflare non configuré');
+    const video = await this.prisma.video.findUnique({ where: { id: videoId }, include: { mediaAsset: true } });
+    if (!video) throw new NotFoundException('Vidéo introuvable');
+    let asset = video.mediaAsset;
+    if (!asset) {
+      if (!isMediaStorageUrl(video.videoUrl)) throw new BadRequestException('Original local requis. Réimportez le fichier sur cette vidéo.');
+      const url = new URL(video.videoUrl, 'http://local.invalid');
+      const parts = decodeURIComponent(url.pathname).replace(/^\//, '').split('/');
+      const bucket = parts.shift()!;
+      const object = parts.join('/');
+      if (bucket !== this.minio.getBucketName('videos') || !/\.(mp4|mov|webm|mkv)$/i.test(object) || !(await this.minio.objectExists(bucket, object)))
+        throw new BadRequestException('Original vidéo introuvable. Réimportez le fichier original sur la vidéo existante ; un manifeste HLS seul ne suffit pas.');
+      // Serialize repeated clicks so one video cannot create multiple local assets.
+      return this.prisma.$transaction(async db => {
+        await db.$queryRaw`SELECT id FROM "Video" WHERE id = ${videoId} FOR UPDATE`;
+        const current = await db.video.findUnique({ where: { id: videoId } });
+        const media = current?.mediaAssetId ? await db.mediaAsset.findUnique({ where: { id: current.mediaAssetId } }) : await db.mediaAsset.create({ data: { title: video.title, filename: object.split('/').pop()!, fileUrl: video.videoUrl, type: 'video', userId: video.userId, originalBucket: bucket, originalObject: object } });
+        if (!media) throw new BadRequestException('Original introuvable');
+        await db.videoDelivery.upsert({ where: { mediaAssetId: media.id }, create: { mediaAssetId: media.id }, update: {} });
+        await db.video.update({ where: { id: videoId }, data: { mediaAssetId: media.id } });
+        return { queued: true };
+      });
+    }
+    if (asset.type !== 'video' || asset.originalBucket !== this.minio.getBucketName('videos') || !asset.originalObject || !(await this.minio.objectExists(asset.originalBucket, asset.originalObject))) throw new BadRequestException('Original MinIO introuvable ; réimportez-le avant de migrer.');
+    await this.prisma.videoDelivery.upsert({ where: { mediaAssetId: asset.id }, create: { mediaAssetId: asset.id }, update: {} });
+    return { queued: true };
+  }
+
+  private async localPlayback(video: any, caller?: DeliveryCaller) {
+    if (!this.contentAccess) throw new ServiceUnavailableException('Secours local indisponible');
+    const sample = this.prisma.videoMonitorSample && await this.prisma.videoMonitorSample.findFirst({ where: { hostId: process.env.MONITOR_HOST_ID || hostname(), sampledAt: { gte: new Date(Date.now() - 45_000) } }, orderBy: { sampledAt: 'desc' } });
+    if (sample && ((sample.cpuPercent ?? 0) >= 95 || (sample.memoryPercent ?? 0) >= 95 || sample.minioOk === false || (sample.networkCapacityMbps && (sample.networkTxBps ?? 0) * 8 / 1e6 >= sample.networkCapacityMbps * 0.9)))
+      throw new ServiceUnavailableException('Le serveur de secours est momentanément saturé. Réessayez plus tard.');
+    const asset = video.mediaAsset;
+    if (asset?.originalBucket && asset?.originalObject && !(await this.minio.objectExists(asset.originalBucket, asset.originalObject))) throw new ServiceUnavailableException('Original local indisponible');
+    return { ...(await this.contentAccess.playback('VIDEO', video.id, caller)), provider: 'MINIO' };
+  }
   private readonly tokens = new Map<
     string,
     { url: string; expiresAt: number }
@@ -31,6 +90,7 @@ export class VideoDeliveryService {
     private readonly prisma: PrismaService,
     private readonly minio: MinioService,
     private readonly cloudflare: CloudflareStreamService,
+    @Optional() private readonly contentAccess?: ContentAccessService,
   ) {}
 
   async sourceReference(
@@ -126,7 +186,7 @@ export class VideoDeliveryService {
     });
     if (!video) throw new NotFoundException('Vidéo introuvable');
     const privileged =
-      isAdmin(caller) || (!!caller?.id && caller.id === video.userId);
+      (this.contentAccess ? await this.contentAccess.isAdmin(caller) : isAdmin(caller)) || (!!caller?.id && caller.id === video.userId);
     if (!video.isPublished && !privileged)
       throw new NotFoundException('Vidéo indisponible');
     if (video.isMonetized && Number(video.price) > 0 && !privileged) {
@@ -149,14 +209,27 @@ export class VideoDeliveryService {
     return video;
   }
 
-  async playback(videoId: string, caller?: DeliveryCaller) {
+  async playback(videoId: string, caller?: DeliveryCaller, forceLocal = false) {
     const video = await this.accessibleVideo(videoId, caller);
     const delivery = video.mediaAsset?.delivery;
-    if (!delivery || delivery.status !== 'READY' || !delivery.remoteUid)
-      throw new ServiceUnavailableException('Vidéo en cours de préparation');
+    const policy = this.prisma.videoRoutingPolicy ? await this.routing() : { mode: 'CLOUDFLARE_FIRST' };
+    if (forceLocal || policy.mode === 'LOCAL_ONLY' || this.circuitUntil > Date.now()) return this.localPlayback(video, caller);
+    if (!delivery) {
+      if (this.contentAccess) return this.contentAccess.playback('VIDEO', videoId, caller);
+      throw new ServiceUnavailableException('Vidéo indisponible');
+    }
+    if (delivery.status !== 'READY' || !delivery.remoteUid || !this.cloudflare.isEnabled()) return this.localPlayback(video, caller);
     const cached = this.tokens.get(delivery.remoteUid);
     if (cached && cached.expiresAt > Date.now() / 1000 + 300) return cached;
-    const token = await this.cloudflare.playback(delivery.remoteUid);
+    let token: { url: string; expiresAt: number };
+    try {
+      token = await this.cloudflare.playback(delivery.remoteUid);
+      this.failures = 0;
+    } catch {
+      if (++this.failures >= 3) this.circuitUntil = Date.now() + 60_000;
+      this.logger.warn('Cloudflare indisponible : tentative de secours local');
+      return this.localPlayback(video, caller);
+    }
     // Bound cache size; authorization is checked on every request before this cache.
     if (this.tokens.size > 2000) this.tokens.clear();
     this.tokens.set(delivery.remoteUid, token);
