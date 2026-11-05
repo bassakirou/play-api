@@ -28,6 +28,7 @@ export class VideoDeliveryService {
   private running = false;
   private failures = 0;
   private circuitUntil = 0;
+  private readonly encodingProgress = new Map<string, { phase: string; percent: number | null }>();
 
   async routing() {
     const policy = await this.prisma.videoRoutingPolicy.findUnique({ where: { id: 'default' } });
@@ -341,6 +342,9 @@ export class VideoDeliveryService {
   async reconcile(id: string, remote: StreamVideo, leaseUntil?: Date) {
     const job = await this.prisma.videoDelivery.findUnique({ where: { id } });
     if (!job || (job.remoteUid && job.remoteUid !== remote.uid)) return;
+    const value = Number(remote.status?.pctComplete);
+    this.encodingProgress.set(id, { phase: remote.status?.state || 'processing', percent: remote.status?.pctComplete != null && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null });
+    if (this.encodingProgress.size > 500) this.encodingProgress.delete(this.encodingProgress.keys().next().value!);
     if (job.status === 'READY') {
       await this.publishReady(job.mediaAssetId);
       return;
@@ -441,6 +445,7 @@ export class VideoDeliveryService {
         mediaAssetId: job.mediaAssetId,
         title: mediaAsset.title,
         status: job.status,
+        progress: job.status === 'READY' ? { phase: 'ready', percent: 100 } : job.status === 'PROCESSING' ? this.encodingProgress.get(job.id) || { phase: 'processing', percent: null } : { phase: job.status.toLowerCase(), percent: null },
         attempts: job.attempts,
         lastError: job.lastError,
         updatedAt: job.updatedAt,
