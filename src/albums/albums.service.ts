@@ -52,8 +52,11 @@ export class AlbumsService {
     });
   }
 
-  async findAll(isAcademic?: boolean) {
+  async findAll(isAcademic?: boolean, caller?: { id: string; role?: string }) {
     const where: any = {};
+    if (caller && !['ADMIN', 'SUPER_ADMIN'].includes(caller.role || '')) {
+      where.artist = { userId: caller.id || '__unauthorized__' };
+    }
     if (isAcademic !== undefined) {
       where.isAcademic = isAcademic;
     }
@@ -62,7 +65,7 @@ export class AlbumsService {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        artist: true,
+        artist: caller ? { include: { user: { select: { email: true } } } } : true,
         groups: true,
         songs: {
           include: {
@@ -75,6 +78,7 @@ export class AlbumsService {
     return Promise.all(
       albums.map(async (a) => ({
         ...a,
+        ...(caller ? { creatorEmails: (a.artist as any)?.user?.email ? [(a.artist as any).user.email] : [] } : {}),
         coverUrl: a.coverUrl ? await this.refreshUrl(a.coverUrl) : null,
       })),
     );

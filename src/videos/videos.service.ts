@@ -4,6 +4,7 @@ import { MinioService } from '../storage/minio.service';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { DeliveryCaller, VideoDeliveryService } from '../video-delivery/video-delivery.service';
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 
 const defaultInclude = {
   mediaAsset: { include: { delivery: true } },
@@ -350,7 +351,12 @@ export class VideosService {
       data.category = taxonomy.categoryName;
       data.categoryId = taxonomy.categoryId;
       data.tags = taxonomy.tags.map((tag) => tag.name);
-      data.videoTags = { set: taxonomy.tags.map((tag) => ({ tagId: tag.id })) };
+      // These are join records with a required videoId, not tag records.
+      // Replace the links atomically without deleting the shared tags.
+      data.videoTags = {
+        deleteMany: {},
+        create: taxonomy.tags.map((tag) => ({ tag: { connect: { id: tag.id } } })),
+      } satisfies Prisma.VideoTagOnVideoUpdateManyWithoutVideoNestedInput;
     }
 
     const effectiveArtistIds = Array.isArray(artistIds)
@@ -439,38 +445,7 @@ export class VideosService {
     const rawPlaylists = video?.VideoPlaylist || [];
     let user = video?.user || null;
 
-    if (!user) {
-      // Find admin user or first user to associate with videos created without userId
-      const fallbackUser =
-        (await (this.prisma as any).user.findFirst({
-          where: { role: { name: 'ADMIN' } },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            artistProfile: true,
-          },
-        })) ||
-        (await (this.prisma as any).user.findFirst({
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            artistProfile: true,
-          },
-        }));
-
-      if (fallbackUser) {
-        user = fallbackUser;
-        // Backfill userId in PostgreSQL DB asynchronously
-        (this.prisma as any).video
-          .update({
-            where: { id: video.id },
-            data: { userId: fallbackUser.id },
-          })
-          .catch(() => {});
-      }
-    }
+    // A missing owner must stay unknown; listing content must not assign one.
 
     if (user) {
       if (!user.artistProfile) {

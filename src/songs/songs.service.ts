@@ -13,18 +13,25 @@ export class SongsService {
     private minio: MinioService,
   ) {}
 
-  async findAll(isAcademic?: boolean) {
+  async findAll(isAcademic?: boolean, caller?: { id: string; role?: string }) {
     const where: any = {};
+    if (caller && !['ADMIN', 'SUPER_ADMIN'].includes(caller.role || '')) {
+      where.artists = { some: { userId: caller.id || '__unauthorized__' } };
+    }
     if (isAcademic !== undefined) {
       where.isAcademic = isAcademic;
     }
     const songs = await this.prisma.song.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { artists: true, groups: true, album: true, genre: true },
+      include: {
+        artists: caller ? { include: { user: { select: { email: true } } } } : true,
+        groups: true, album: true, genre: true,
+      },
     });
     return songs.map((s) => ({
       ...s,
+      ...(caller ? { creatorEmails: [...new Set(s.artists.flatMap((artist: any) => artist.user?.email ? [artist.user.email as string] : []))] } : {}),
       audioUrl: this.refreshUrl(s.audioUrl),
       coverUrl: this.refreshUrl(s.coverUrl),
     }));

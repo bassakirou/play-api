@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Query,
+  Request,
 } from '@nestjs/common';
 import { AlbumsService } from './albums.service';
 import { CreateAlbumDto } from './dto/create-album.dto';
@@ -36,6 +37,14 @@ export class AlbumsController {
     if (isAcademic === 'true') academicBool = true;
     else if (isAcademic === 'false') academicBool = false;
     return this.albumsService.findAll(academicBool);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @CheckPermissions('read:album')
+  @Get('admin')
+  findAllAdmin(@Request() req: any) {
+    return this.albumsService.findAll(undefined, req.user);
   }
 
   @Get(':id')

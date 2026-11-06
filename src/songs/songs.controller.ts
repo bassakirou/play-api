@@ -37,6 +37,14 @@ export class SongsController {
     return this.songsService.findAll(filter);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @CheckPermissions('read:song')
+  @Get('admin')
+  findAllAdmin(@Request() req: any) {
+    return this.songsService.findAll(undefined, req.user);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.songsService.findOne(id);
