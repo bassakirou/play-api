@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { TaraService, TaraRequestRejectedError } from '../tara/tara.service';
+import { TaraService, TaraRequestRejectedError, type TaraMobilePayResponse } from '../tara/tara.service';
 import {
   UpdateMonetizationConfigDto,
   CreateGiftCatalogDto,
@@ -266,6 +266,7 @@ export class MonetizationService implements OnModuleInit {
           status: existing.status,
           reused: true,
           providerStatus: (existing.metadata as any)?.providerStatus || 'UNKNOWN',
+          diagnosticCode: (existing.metadata as any)?.diagnosticCode,
           ussdCode: (existing.metadata as any)?.ussdCode,
           authUrl: (existing.metadata as any)?.authUrl,
         };
@@ -408,6 +409,7 @@ export class MonetizationService implements OnModuleInit {
         status: existing.status,
         reused: true,
           providerStatus: (existing.metadata as any)?.providerStatus || 'UNKNOWN',
+          diagnosticCode: (existing.metadata as any)?.diagnosticCode,
           ussdCode: (existing.metadata as any)?.ussdCode,
           authUrl: (existing.metadata as any)?.authUrl,
       };
@@ -422,17 +424,20 @@ export class MonetizationService implements OnModuleInit {
         phoneNumber: dto.phoneNumber,
         webHookUrl,
       })
-      .catch(
-        (error) =>
-          ({
-            status:
-              error instanceof TaraRequestRejectedError ? 'FAILURE' : 'UNKNOWN',
-            message:
-              error instanceof TaraRequestRejectedError
-                ? 'Demande de paiement refusée.'
-                : 'Résultat de la demande incertain. Conservez la référence et vérifiez son statut sans relancer le paiement.',
-          }) as any,
-      );
+      .catch((error: unknown): TaraMobilePayResponse => {
+        if (error instanceof TaraRequestRejectedError) {
+          return {
+            status: 'FAILURE' as const,
+            diagnosticCode: error.code,
+            message: error.message,
+          };
+        }
+        return {
+          status: 'UNKNOWN' as const,
+          diagnosticCode: 'TARA_RESULT_UNKNOWN',
+          message: 'Résultat de la demande incertain. Conservez la référence et vérifiez son statut sans relancer le paiement.',
+        };
+      });
 
     await this.prisma.transaction.update({
       where: { id: transaction.id },
@@ -440,6 +445,7 @@ export class MonetizationService implements OnModuleInit {
         paymentId: taraRes.paymentId ? String(taraRes.paymentId) : undefined,
         vendor: taraRes.vendor,
         metadata: { ...(transaction.metadata as any || {}), providerStatus: taraRes.status || 'UNKNOWN',
+          diagnosticCode: taraRes.diagnosticCode ?? null,
           ussdCode: typeof taraRes.ussdCode === 'string' ? taraRes.ussdCode : null,
           authUrl: typeof taraRes.authUrl === 'string' ? taraRes.authUrl : null },
         ...(taraRes.status === 'FAILURE' ? { status: 'FAILURE' } : {}),
@@ -454,6 +460,7 @@ export class MonetizationService implements OnModuleInit {
       vendor: taraRes.vendor,
       status: taraRes.status === 'FAILURE' ? 'FAILURE' : 'PENDING',
       providerStatus: taraRes.status,
+      diagnosticCode: taraRes.diagnosticCode,
       authUrl: taraRes.authUrl,
       simulated: false,
       message: taraRes.message || 'Validation USSD envoyée sur le mobile.',

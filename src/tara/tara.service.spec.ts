@@ -26,7 +26,9 @@ describe('Tara transport', () => {
   });
   it('rejects missing credentials without simulating success', async () => {
     const service = new TaraService({ monetizationConfig: { findUnique: async () => ({ taraApiKey: '', taraBusinessId: '', isLiveMode: true }) } } as any);
-    await expect(service.getTransactionStatus('p')).rejects.toThrow();
+    await expect(service.getTransactionStatus('p')).rejects.toMatchObject({
+      code: 'TARA_NOT_CONFIGURED',
+    });
   });
   it('throws on a definite provider refusal', async () => {
     const service = new TaraService({ monetizationConfig: { findUnique: async () => ({ taraApiKey: 'key', taraBusinessId: 'business', taraBaseUrl: 'https://www.dklo.co/api/tara' }) } } as any);

@@ -44,7 +44,12 @@ export interface TaraTransactionStatusResponse {
   [key: string]: any;
 }
 
-export class TaraRequestRejectedError extends Error {}
+export class TaraRequestRejectedError extends Error {
+  constructor(message: string, public readonly code = 'TARA_REQUEST_REJECTED') {
+    super(message);
+    this.name = 'TaraRequestRejectedError';
+  }
+}
 export class TaraLookupUnavailableError extends Error {
   constructor(public readonly code: 'TRANSACTION_NOT_FOUND' | 'PROVIDER_UNAVAILABLE') {
     super(code);
@@ -107,9 +112,12 @@ export class TaraService {
     const businessId = config.taraBusinessId;
     const baseUrl = config.taraBaseUrl?.trim() || this.defaultBaseUrl;
 
-    if (!apiKey || !businessId) {
+    const reference = typeof payload.productId === 'string' ? payload.productId : undefined;
+    if (!apiKey?.trim() || !businessId?.trim()) {
+      this.logger.warn({ event: 'tara.config_missing', path, reference });
       throw new TaraRequestRejectedError(
-        'Configuration Tara incomplète. Aucun paiement envoyé.',
+        'Paiement indisponible : la configuration Tara du marchand est incomplète.',
+        'TARA_NOT_CONFIGURED',
       );
     }
     // Credentials may only be sent to the trusted provider origin.
@@ -124,7 +132,6 @@ export class TaraService {
       ...payload,
     };
     const startedAt = Date.now();
-    const reference = typeof payload.productId === 'string' ? payload.productId : undefined;
     this.logger.log({ event: 'tara.request', path, reference });
 
     try {
