@@ -1,5 +1,6 @@
 import {
   Controller,
+  Header,
   Get,
   Post,
   Patch,
@@ -16,6 +17,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { LivesService } from './lives.service';
 import { CreateLiveDto, UpdateLiveDto, AddCommentDto, AddReactionDto } from './dto/live.dto';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 import { LiveSettingsService, UpdateLiveSettingsDto } from './live-settings.service';
@@ -67,6 +69,8 @@ export class LivesController {
     return this.livesService.findAll({ category, type, status, search, isAcademic: academicBool });
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
+  @Header('Cache-Control', 'private, no-store')
   @Get(':id')
   findOne(
     @Param('id') id: string,
@@ -95,6 +99,13 @@ export class LivesController {
     const userId = req.user?.userId || req.user?.id || req.user?.sub;
     const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
     return this.livesService.update(id, userId, dto, isAdmin);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/broadcast')
+  @Header('Cache-Control', 'private, no-store')
+  prepareBroadcast(@Param('id') id: string, @Request() req: any) {
+    return this.livesService.prepareBroadcast(id, req.user?.userId || req.user?.id || req.user?.sub);
   }
 
   @UseGuards(JwtAuthGuard)

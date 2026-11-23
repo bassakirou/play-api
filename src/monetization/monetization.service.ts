@@ -1,3 +1,6 @@
+import { creatorPlansForContent, eligiblePlanTypes, memberPasses, membershipEnd, membershipExpiry, saveCreatorPlan } from './creator-memberships';
+import { CreatorPlanDto } from './dto/creator-plan.dto';
+import { isPurchaseActive, validateAccessPeriod } from '../content-access/access-period';
 import {
   Injectable,
   Logger,
@@ -238,6 +241,71 @@ export class MonetizationService implements OnModuleInit {
     }
   }
 
+  private offerVersion(item: any) {
+    return createHash('sha256').update(JSON.stringify([
+      item.id, item.isMonetized, item.price, item.discountPrice ?? null,
+      item.accessMode || 'PERMANENT', item.accessDurationDays ?? null,
+      item.accessStartsAt ? new Date(item.accessStartsAt).toISOString() : null,
+      item.accessEndsAt ? new Date(item.accessEndsAt).toISOString() : null,
+    ])).digest('hex');
+  }
+
+  async listCreatorPlans(creatorId: string) {
+    const [plans, allowedTypes] = await Promise.all([
+      this.prisma.creatorPlan.findMany({ where: { creatorId }, orderBy: { createdAt: 'asc' } }),
+      eligiblePlanTypes(this.prisma, creatorId),
+    ]);
+    return { plans, allowedTypes };
+  }
+
+  saveCreatorPlan(creatorId: string, dto: CreatorPlanDto, id?: string) {
+    return saveCreatorPlan(this.prisma, creatorId, dto, id);
+  }
+
+  async deleteCreatorPlan(creatorId: string, id: string) {
+    const result = await this.prisma.creatorPlan.deleteMany({ where: { creatorId, id } });
+    if (!result.count) throw new NotFoundException('Abonnement introuvable.');
+    return { deleted: true };
+  }
+
+  listContentPlans(userId: string, type: string, id: string) {
+    return creatorPlansForContent(this.prisma, userId, type, id);
+  }
+
+  listMemberPasses(userId: string) { return memberPasses(this.prisma, userId); }
+
+  private async liveOffer(type: string, id: string) {
+    const live = await this.prisma.liveStream.findUnique({ where: { id } });
+    const replay = type === 'LIVE_REPLAY';
+    if (!live || live.isPrivate || (replay
+      ? live.status !== 'REPLAY' || live.isCleanedUp || !live.replaySourceObject
+      : !['LIVE', 'SCHEDULED'].includes(live.status)))
+      throw new NotFoundException(replay ? 'Ce replay n’est pas disponible à l’achat.' : 'Les ventes pour ce direct sont closes.');
+    const price = replay ? live.replayPrice : live.livePrice;
+    return {
+      id, title: live.title, userId: live.userId, price, isMonetized: price > 0,
+      discountPrice: replay ? live.replayDiscountPrice : live.liveDiscountPrice,
+      accessMode: replay ? live.accessMode : 'PERMANENT',
+      accessStartsAt: replay ? live.accessStartsAt : null,
+      accessEndsAt: replay ? live.accessEndsAt : null,
+      accessDurationDays: replay ? live.accessDurationDays : null,
+    };
+  }
+
+  async getPurchaseOffer(contentType: string, contentId: string) {
+    const models = { SONG: this.prisma.song, ALBUM: this.prisma.album, VIDEO: this.prisma.video,
+      AUDIOBOOK: this.prisma.audiobook, COURSE: this.prisma.academicCourse };
+    const isLive = contentType === 'LIVE' || contentType === 'LIVE_REPLAY';
+    const model = Object.hasOwn(models, contentType) ? models[contentType] : null;
+    if (!model && !isLive) throw new BadRequestException('Type de contenu invalide.');
+    const item = isLive ? await this.liveOffer(contentType, contentId) : await (model as any).findUnique({ where: { id: contentId } });
+    if (!item || (['VIDEO', 'COURSE'].includes(contentType) && !item.isPublished))
+      throw new NotFoundException('Contenu indisponible.');
+    return { offerVersion: this.offerVersion(item), id: item.id, title: item.title, price: item.price, discountPrice: item.discountPrice,
+      isMonetized: item.isMonetized, accessMode: item.accessMode,
+      accessStartsAt: item.accessStartsAt, accessEndsAt: item.accessEndsAt, accessDurationDays: item.accessDurationDays };
+  }
+
   async initiatePurchase(
     userId: string,
     dto: InitiatePurchaseDto,
@@ -256,7 +324,8 @@ export class MonetizationService implements OnModuleInit {
       if (existing) {
         if (
           existing.contentId !== dto.contentId ||
-          existing.contentType !== dto.contentType
+          existing.contentType !== dto.contentType ||
+          (existing.metadata as any)?.creatorPlanId !== dto.creatorPlanId
         )
           throw new BadRequestException('Identifiant de demande déjà utilisé.');
         return {
@@ -274,10 +343,29 @@ export class MonetizationService implements OnModuleInit {
     }
     let contentTitle = '';
     let contentPrice = 0;
+    let contentOffer: any;
     let beneficiaryArtistId: string | null = null;
     let beneficiaryUserId: string | null = null;
 
-    if (dto.contentType === 'SONG') {
+    const creatorPlan = dto.creatorPlanId
+      ? (await this.listContentPlans(userId, dto.contentType, dto.contentId)).find(plan => plan.id === dto.creatorPlanId)
+      : undefined;
+    if (dto.creatorPlanId && (!creatorPlan || creatorPlan.offerVersion !== dto.creatorPlanVersion))
+      throw new BadRequestException('Cette offre d’abonnement a changé ou n’est plus disponible. Rouvrez le formulaire pour consulter les offres à jour.');
+    if (creatorPlan) {
+      contentTitle = creatorPlan.name;
+      contentPrice = creatorPlan.price;
+      beneficiaryUserId = creatorPlan.creatorId;
+      contentOffer = { accessMode: 'PERMANENT' };
+    } else if (dto.contentType === 'LIVE' || dto.contentType === 'LIVE_REPLAY') {
+      const offer = await this.liveOffer(dto.contentType, dto.contentId);
+      if (!offer.isMonetized) throw new BadRequestException('Cette session est gratuite.');
+      if (offer.userId === userId) throw new BadRequestException('Vous avez déjà accès à votre propre session.');
+      contentOffer = offer;
+      contentTitle = offer.title;
+      contentPrice = this.purchasePrice(offer.price, offer.discountPrice);
+      beneficiaryUserId = offer.userId;
+    } else if (dto.contentType === 'SONG') {
       const song = await this.prisma.song.findUnique({
         where: { id: dto.contentId },
         include: { artists: true },
@@ -286,6 +374,7 @@ export class MonetizationService implements OnModuleInit {
       if (!song.isMonetized || song.price <= 0) {
         throw new BadRequestException('Ce contenu est gratuit.');
       }
+      contentOffer = song;
       contentTitle = song.title;
       contentPrice = this.purchasePrice(song.price, song.discountPrice);
       beneficiaryArtistId = song.artists[0]?.id || null;
@@ -298,6 +387,7 @@ export class MonetizationService implements OnModuleInit {
       if (!album.isMonetized || album.price <= 0) {
         throw new BadRequestException('Cet album est gratuit.');
       }
+      contentOffer = album;
       contentTitle = album.title;
       contentPrice = this.purchasePrice(album.price, album.discountPrice);
       beneficiaryArtistId = album.artistId;
@@ -307,9 +397,11 @@ export class MonetizationService implements OnModuleInit {
         include: { artists: true },
       });
       if (!video) throw new NotFoundException('Vidéo introuvable.');
+      if (video.isPublished === false) throw new NotFoundException('Vidéo indisponible.');
       if (!video.isMonetized || video.price <= 0) {
         throw new BadRequestException('Cette vidéo est gratuite.');
       }
+      contentOffer = video;
       contentTitle = video.title;
       contentPrice = this.purchasePrice(video.price, video.discountPrice);
       beneficiaryArtistId = video.artists[0]?.id || null;
@@ -323,6 +415,7 @@ export class MonetizationService implements OnModuleInit {
       if (!book.isMonetized || book.price <= 0) {
         throw new BadRequestException('Ce livre audio est gratuit.');
       }
+      contentOffer = book;
       contentTitle = book.title;
       contentPrice = this.purchasePrice(book.price, book.discountPrice);
       beneficiaryArtistId = book.authorUser?.artistProfile?.id || null;
@@ -335,6 +428,7 @@ export class MonetizationService implements OnModuleInit {
         throw new NotFoundException('Formation introuvable.');
       if (!course.isMonetized || course.price <= 0)
         throw new BadRequestException('Cette formation est gratuite.');
+      contentOffer = course;
       contentTitle = course.title;
       contentPrice = this.purchasePrice(course.price, course.discountPrice);
       beneficiaryUserId = course.instructorId;
@@ -355,7 +449,10 @@ export class MonetizationService implements OnModuleInit {
     if (!Number.isSafeInteger(contentPrice) || contentPrice <= 0)
       throw new BadRequestException('Prix invalide.');
 
-    const alreadyBought = await this.prisma.userPurchasedContent.findUnique({
+    if (!creatorPlan && await membershipExpiry(this.prisma, userId, dto.contentType, dto.contentId))
+      throw new BadRequestException('Votre abonnement donne déjà accès à ce contenu. Actualisez la page pour le consulter.');
+
+    const alreadyBought = !creatorPlan && await this.prisma.userPurchasedContent.findUnique({
       where: {
         userId_contentId_contentType: {
           userId,
@@ -364,7 +461,16 @@ export class MonetizationService implements OnModuleInit {
         },
       },
     });
-    if (alreadyBought) {
+    validateAccessPeriod(contentOffer);
+    if (!creatorPlan && dto.offerVersion && dto.offerVersion !== this.offerVersion(contentOffer))
+      throw new BadRequestException('Les conditions de cette offre ont changé. Fermez puis rouvrez le paiement pour les consulter.');
+    const period = contentOffer.accessMode === 'PERIOD';
+    if (period && new Date(contentOffer.accessEndsAt).getTime() <= Date.now())
+      throw new BadRequestException('Cette période est terminée. Le créateur doit proposer une nouvelle période.');
+    const accessStartsAt = period ? new Date(contentOffer.accessStartsAt).toISOString() : null;
+    const accessEndsAt = period ? new Date(contentOffer.accessEndsAt).toISOString() : null;
+    // A scheduled purchase also owns its complete interval; no duplicate charge.
+    if (alreadyBought && (!alreadyBought.accessEndsAt || new Date(alreadyBought.accessEndsAt).getTime() > Date.now())) {
       throw new BadRequestException('Vous avez déjà acheté ce contenu.');
     }
 
@@ -376,12 +482,12 @@ export class MonetizationService implements OnModuleInit {
     const productId = requestProductId || 'PUR-' + randomUUID();
 
     let transaction;
+    let reusedPlanPayment = false;
     try {
-      transaction = await this.prisma.transaction.create({
-        data: {
+      const data = {
           productId,
           userId,
-          type: 'CONTENT_PURCHASE',
+          type: creatorPlan ? 'CREATOR_SUBSCRIPTION' : 'CONTENT_PURCHASE',
           amount: contentPrice,
           platformFee,
           creatorShare,
@@ -393,15 +499,29 @@ export class MonetizationService implements OnModuleInit {
           contentType: dto.contentType,
           metadata: {
             contentTitle,
+            ...(creatorPlan ? { creatorPlanId: creatorPlan.id, cadence: creatorPlan.cadence, contentTypes: creatorPlan.contentTypes } : {}),
+            accessStartsAt,
+            accessEndsAt,
+            accessDurationDays: contentOffer.accessMode === 'DURATION' ? contentOffer.accessDurationDays : null,
           },
-        },
-      });
+      };
+      transaction = creatorPlan ? await this.prisma.$transaction(async db => {
+        await db.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+        const current = await db.creatorMembership.findFirst({ where: { subscriberId: userId, planId: creatorPlan.id, endsAt: { gt: new Date() } } });
+        if (current) throw new BadRequestException('Vous avez déjà cet abonnement. Vous pourrez le renouveler à son expiration.');
+        const pending = await db.transaction.findFirst({ where: { userId, type: 'CREATOR_SUBSCRIPTION', status: 'PENDING', metadata: { path: ['creatorPlanId'], equals: creatorPlan.id } } });
+        if (pending) { reusedPlanPayment = true; return pending; }
+        return db.transaction.create({ data });
+      }) : await this.prisma.transaction.create({ data });
     } catch (error) {
       if ((error as any)?.code !== 'P2002' || !requestProductId) throw error;
       const existing = await this.prisma.transaction.findFirst({
         where: { productId: requestProductId, userId },
       });
       if (!existing) throw error;
+      if (existing.contentId !== dto.contentId || existing.contentType !== dto.contentType ||
+          (existing.metadata as any)?.creatorPlanId !== dto.creatorPlanId)
+        throw new BadRequestException('Identifiant de demande déjà utilisé.');
       return {
         transactionId: existing.id,
         productId: existing.productId,
@@ -412,6 +532,15 @@ export class MonetizationService implements OnModuleInit {
           diagnosticCode: (existing.metadata as any)?.diagnosticCode,
           ussdCode: (existing.metadata as any)?.ussdCode,
           authUrl: (existing.metadata as any)?.authUrl,
+      };
+    }
+
+    if (reusedPlanPayment) {
+      const metadata = transaction.metadata as any;
+      return {
+        transactionId: transaction.id, productId: transaction.productId, amount: transaction.amount,
+        status: transaction.status, reused: true, providerStatus: metadata?.providerStatus || 'PENDING',
+        authUrl: metadata?.authUrl, ussdCode: metadata?.ussdCode,
       };
     }
 
@@ -788,6 +917,23 @@ export class MonetizationService implements OnModuleInit {
         transaction.contentId &&
         transaction.contentType
       ) {
+        const offer = transaction.metadata as any;
+        const grantedAt = new Date();
+        const duration = offer?.accessDurationDays;
+        const grant = {
+          accessStartsAt: duration ? grantedAt : offer?.accessStartsAt ? new Date(offer.accessStartsAt) : null,
+          accessEndsAt: duration ? new Date(grantedAt.getTime() + duration * 86400000) : offer?.accessEndsAt ? new Date(offer.accessEndsAt) : null,
+          pricePaid: transaction.amount,
+          paymentId: paymentId || transaction.paymentId,
+          title: offer?.contentTitle || '',
+        };
+        // Serialize grants: a delayed old notification must never shorten a newer purchase.
+        await db.$queryRaw`SELECT id FROM "User" WHERE id = ${transaction.userId} FOR UPDATE`;
+        const previous = await db.userPurchasedContent.findUnique({ where: { userId_contentId_contentType: {
+          userId: transaction.userId, contentId: transaction.contentId, contentType: transaction.contentType,
+        } } });
+        const keepPrevious = previous && (!previous.accessEndsAt ||
+          (grant.accessEndsAt && new Date(previous.accessEndsAt) >= grant.accessEndsAt));
         await db.userPurchasedContent.upsert({
           where: {
             userId_contentId_contentType: {
@@ -796,18 +942,29 @@ export class MonetizationService implements OnModuleInit {
               contentType: transaction.contentType,
             },
           },
-          update: {},
+          update: keepPrevious ? {} : grant,
           create: {
             userId: transaction.userId,
             contentId: transaction.contentId,
             contentType: transaction.contentType,
-            pricePaid: transaction.amount,
-            paymentId: paymentId || transaction.paymentId,
-            title: (transaction.metadata as any)?.contentTitle || '',
+            ...grant,
           },
         });
+      } else if (transaction.type === 'CREATOR_SUBSCRIPTION' && transaction.userId && transaction.beneficiaryUserId) {
+        const snapshot = transaction.metadata as { creatorPlanId: string; cadence: string; contentTypes: string[]; contentTitle: string };
+        const startsAt = new Date();
+        await db.creatorMembership.create({ data: {
+          transactionId: transaction.id,
+          subscriberId: transaction.userId,
+          creatorId: transaction.beneficiaryUserId,
+          planId: snapshot.creatorPlanId,
+          planName: snapshot.contentTitle,
+          contentTypes: snapshot.contentTypes,
+          startsAt,
+          endsAt: membershipEnd(startsAt, snapshot.cadence),
+        } });
       } else if (
-        transaction.type === 'ACADEMIC_SUBSCRIPTION' &&
+        transaction.type === 'ACADEMIC_SUBSCRIPTION'  &&
         transaction.userId
       ) {
         // Serialize concurrent renewals for this account before reading its expiry.
@@ -1243,13 +1400,26 @@ export class MonetizationService implements OnModuleInit {
             where: { id: p.contentId },
             include: { chapters: true },
           });
+        } else if (p.contentType === 'LIVE' || p.contentType === 'LIVE_REPLAY') {
+          details = await this.prisma.liveStream.findUnique({
+            where: { id: p.contentId },
+            select: { id: true, title: true, thumbnailUrl: true, status: true, replayPrice: true, replayDiscountPrice: true },
+          });
+          if (details && p.contentType === 'LIVE_REPLAY') {
+            details.price = details.replayPrice;
+            details.discountPrice = details.replayDiscountPrice;
+          }
         } else if (p.contentType === 'COURSE') {
           details = await this.prisma.academicCourse.findUnique({
             where: { id: p.contentId },
           });
         }
+        const isTicket = p.contentType === 'LIVE';
+        const liveOpen = details && ['LIVE', 'SCHEDULED'].includes(details.status);
         return {
           ...p,
+          hasAccess: isTicket ? Boolean(liveOpen) : isPurchaseActive(p),
+          accessStatus: isTicket ? (liveOpen ? 'SESSION' : 'ENDED') : !p.accessEndsAt ? 'PERMANENT' : new Date(p.accessEndsAt).getTime() <= Date.now() ? 'EXPIRED' : p.accessStartsAt && new Date(p.accessStartsAt).getTime() > Date.now() ? 'SCHEDULED' : 'ACTIVE',
           details,
         };
       }),

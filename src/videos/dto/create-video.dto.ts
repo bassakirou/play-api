@@ -1,3 +1,4 @@
+import { AccessPeriodDto } from '../../content-access/access-period.dto';
 import {
   ArrayMinSize,
   ArrayMaxSize,
@@ -12,7 +13,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class CreateVideoDto {
+export class CreateVideoDto extends AccessPeriodDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

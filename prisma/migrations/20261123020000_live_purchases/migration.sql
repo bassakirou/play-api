@@ -1,0 +1,9 @@
+ALTER TABLE "LiveStream"
+  ADD COLUMN "livePrice" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN "liveDiscountPrice" INTEGER,
+  ADD COLUMN "replayPrice" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN "replayDiscountPrice" INTEGER,
+  ADD COLUMN "accessMode" TEXT NOT NULL DEFAULT 'PERMANENT',
+  ADD COLUMN "accessStartsAt" TIMESTAMP(3),
+  ADD COLUMN "accessEndsAt" TIMESTAMP(3),
+  ADD COLUMN "accessDurationDays" INTEGER;

@@ -1,3 +1,5 @@
+import { membershipExpiry } from '../monetization/creator-memberships';
+import { isPurchaseActive } from '../content-access/access-period';
 import {
   BadRequestException,
   ForbiddenException,
@@ -186,6 +188,7 @@ export class VideoDeliveryService {
       include: { mediaAsset: { include: { delivery: true } } },
     });
     if (!video) throw new NotFoundException('Vidéo introuvable');
+    let accessExpiresAt: number | undefined;
     const privileged =
       (this.contentAccess ? await this.contentAccess.isAdmin(caller) : isAdmin(caller)) || (!!caller?.id && caller.id === video.userId);
     if (!video.isPublished && !privileged)
@@ -202,12 +205,15 @@ export class VideoDeliveryService {
             },
           },
         }));
-      if (!purchase)
+      const subscriptionEnd = isPurchaseActive(purchase) ? null : await membershipExpiry(this.prisma, caller?.id, 'VIDEO', videoId);
+      if (!subscriptionEnd && !isPurchaseActive(purchase))
         throw new ForbiddenException(
           'Achetez cette vidéo pour accéder à la lecture',
         );
+      const end = subscriptionEnd || (purchase && purchase.accessEndsAt);
+      if (end) accessExpiresAt = Math.floor(end.getTime() / 1000);
     }
-    return video;
+    return { ...video, accessExpiresAt };
   }
 
   async playback(videoId: string, caller?: DeliveryCaller, forceLocal = false) {
@@ -220,11 +226,12 @@ export class VideoDeliveryService {
       throw new ServiceUnavailableException('Vidéo indisponible');
     }
     if (delivery.status !== 'READY' || !delivery.remoteUid || !this.cloudflare.isEnabled()) return this.localPlayback(video, caller);
-    const cached = this.tokens.get(delivery.remoteUid);
+    const cacheKey = delivery.remoteUid + ":" + (video.accessExpiresAt || "permanent");
+    const cached = this.tokens.get(cacheKey);
     if (cached && cached.expiresAt > Date.now() / 1000 + 300) return cached;
     let token: { url: string; expiresAt: number };
     try {
-      token = await this.cloudflare.playback(delivery.remoteUid);
+      token = await this.cloudflare.playback(delivery.remoteUid, video.accessExpiresAt);
       this.failures = 0;
     } catch {
       if (++this.failures >= 3) this.circuitUntil = Date.now() + 60_000;
@@ -233,7 +240,7 @@ export class VideoDeliveryService {
     }
     // Bound cache size; authorization is checked on every request before this cache.
     if (this.tokens.size > 2000) this.tokens.clear();
-    this.tokens.set(delivery.remoteUid, token);
+    this.tokens.set(cacheKey, token);
     return token;
   }
 

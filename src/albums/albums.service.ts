@@ -1,3 +1,4 @@
+import { accessPeriodFields } from '../content-access/access-period';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAlbumDto } from './dto/create-album.dto';
@@ -27,6 +28,7 @@ export class AlbumsService {
     const finalArtistId =
       artistId || (artistIds && artistIds.length ? artistIds[0] : null);
     const data: any = {
+      ...accessPeriodFields(createAlbumDto),
       title,
       year: Number(year),
       coverUrl: coverUrl || null,

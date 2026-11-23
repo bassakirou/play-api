@@ -185,6 +185,13 @@ export class MinioService implements OnModuleInit {
     return `${publicUrl}/${bucketName}/${opts.objectName}`;
   }
 
+  async uploadVideoFile(objectName: string, path: string, contentType: string) {
+    if (!this.client) throw new Error('MinIO not configured');
+    const bucket = this.cfg.buckets?.videos || 'videos';
+    await this.ensureBucket(bucket);
+    await this.client.fPutObject(bucket, objectName, path, { 'Content-Type': contentType });
+  }
+
   async presignGet(opts: {
     bucket: 'audio' | 'images' | 'videos';
     objectName: string;
@@ -302,12 +309,16 @@ export class MinioService implements OnModuleInit {
     return false;
   }
 
-  async removeObject(bucket: string, objectName: string): Promise<void> {
-    if (!this.client) return;
+  async removeObject(bucket: string, objectName: string, strict = false): Promise<void> {
+    if (!this.client) {
+      if (strict) throw new Error('MinIO not configured');
+      return;
+    }
     const bucketName = (this.cfg.buckets?.[bucket as any] as string) || bucket;
     try {
       await this.client.removeObject(bucketName, objectName);
     } catch (e: any) {
+      if (strict) throw e;
       console.warn(`[MinioService] removeObject error: ${e.message}`);
     }
   }

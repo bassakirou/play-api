@@ -1,3 +1,4 @@
+import { AccessPeriodDto } from '../../content-access/access-period.dto';
 import {
   IsString,
   IsNotEmpty,
@@ -9,7 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class CreateAudiobookDto {
+export class CreateAudiobookDto extends AccessPeriodDto {
   @ApiProperty({ description: 'Titre du livre audio' })
   @IsString()
   @IsNotEmpty()

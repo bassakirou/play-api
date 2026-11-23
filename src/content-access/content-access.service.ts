@@ -1,3 +1,5 @@
+import { membershipExpiry } from '../monetization/creator-memberships';
+import { isPurchaseActive } from './access-period';
 import {
   ForbiddenException,
   Injectable,
@@ -41,7 +43,7 @@ export class ContentAccessService {
 
   async purchased(type: string, id: string, caller?: ContentCaller) {
     if (!caller?.id) return false;
-    return !!(await this.prisma.userPurchasedContent.findUnique({
+    const purchased = isPurchaseActive(await this.prisma.userPurchasedContent.findUnique({
       where: {
         userId_contentId_contentType: {
           userId: caller.id,
@@ -50,6 +52,7 @@ export class ContentAccessService {
         },
       },
     }));
+    return purchased || Boolean(await membershipExpiry(this.prisma, caller.id, type, id));
   }
 
   async canManage(item: any, caller?: ContentCaller): Promise<boolean> {

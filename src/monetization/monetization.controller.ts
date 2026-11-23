@@ -14,6 +14,7 @@ import {
 import { FinancialAdminGuard } from './financial-admin.guard';
 import { MonetizationService } from './monetization.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CreatorPlanDto } from './dto/creator-plan.dto';
 import {
   UpdateMonetizationConfigDto,
   CreateGiftCatalogDto,
@@ -28,6 +29,30 @@ import {
 @Controller('monetization')
 export class MonetizationController {
   constructor(private readonly monetizationService: MonetizationService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Get('creator/plans')
+  getCreatorPlans(@Request() req: any) { return this.monetizationService.listCreatorPlans(req.user.id); }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('creator/plans')
+  createCreatorPlan(@Request() req: any, @Body() dto: CreatorPlanDto) { return this.monetizationService.saveCreatorPlan(req.user.id, dto); }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('creator/plans/:id')
+  updateCreatorPlan(@Request() req: any, @Param('id') id: string, @Body() dto: CreatorPlanDto) { return this.monetizationService.saveCreatorPlan(req.user.id, dto, id); }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('creator/plans/:id')
+  deleteCreatorPlan(@Request() req: any, @Param('id') id: string) { return this.monetizationService.deleteCreatorPlan(req.user.id, id); }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('content-plans/:type/:id')
+  contentPlans(@Request() req: any, @Param('type') type: string, @Param('id') id: string) { return this.monetizationService.listContentPlans(req.user.id, type.toUpperCase(), id); }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('my-creator-subscriptions')
+  memberPasses(@Request() req: any) { return this.monetizationService.listMemberPasses(req.user.id); }
 
   @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Get('admin/config')
@@ -92,6 +117,12 @@ export class MonetizationController {
   @Delete('admin/gifts/:id')
   async deleteGiftItem(@Param('id') id: string) {
     return this.monetizationService.deleteGiftItem(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('offer/:contentType/:contentId')
+  async getPurchaseOffer(@Param('contentType') contentType: string, @Param('contentId') contentId: string) {
+    return this.monetizationService.getPurchaseOffer(contentType.toUpperCase(), contentId);
   }
 
   @UseGuards(JwtAuthGuard)

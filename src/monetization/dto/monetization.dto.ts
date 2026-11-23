@@ -103,14 +103,26 @@ export class UpdateGiftCatalogDto {
 }
 
 export class InitiatePurchaseDto {
+  @IsOptional()
+  @IsUUID()
+  creatorPlanId?: string;
+
+  @IsOptional()
+  @IsString()
+  creatorPlanVersion?: string;
+
+  @IsOptional()
+  @IsString()
+  offerVersion?: string;
+
   @IsString()
   @IsNotEmpty()
   contentId: string;
 
   @IsString()
   @IsNotEmpty()
-  @IsIn(['SONG', 'ALBUM', 'VIDEO', 'AUDIOBOOK', 'COURSE'])
-  contentType: 'SONG' | 'ALBUM' | 'VIDEO' | 'AUDIOBOOK' | 'COURSE';
+  @IsIn(['SONG', 'ALBUM', 'VIDEO', 'AUDIOBOOK', 'COURSE', 'LIVE', 'LIVE_REPLAY'])
+  contentType: 'SONG' | 'ALBUM' | 'VIDEO' | 'AUDIOBOOK' | 'COURSE' | 'LIVE' | 'LIVE_REPLAY';
 
   @IsOptional()
   @IsUUID()

@@ -87,17 +87,19 @@ export class CloudflareStreamService {
     method = 'GET',
     body?: unknown,
   ): Promise<T> {
-    if (!this.isEnabled())
+    const account = this.config.get<string>('CLOUDFLARE_ACCOUNT_ID');
+    const apiToken = this.config.get<string>('CLOUDFLARE_STREAM_API_TOKEN');
+    if (method === 'DELETE' ? !account || !apiToken : !this.isEnabled())
       throw new ServiceUnavailableException('Cloudflare Stream non configuré');
     let response: Response;
     try {
       response = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(this.config.get<string>('CLOUDFLARE_ACCOUNT_ID')!)}/stream${path}`,
+        `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(account!)}/stream${path}`,
         {
           method,
           signal: AbortSignal.timeout(20_000),
           headers: {
-            Authorization: `Bearer ${this.config.get('CLOUDFLARE_STREAM_API_TOKEN')}`,
+            Authorization: `Bearer ${apiToken}`,
             'Content-Type': 'application/json',
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -108,6 +110,7 @@ export class CloudflareStreamService {
         'Cloudflare Stream temporairement inaccessible',
       );
     }
+    if (method === 'DELETE' && (response.ok || response.status === 404)) return undefined as T;
     if (!response.ok)
       throw new ServiceUnavailableException(
         `Cloudflare Stream : requête refusée (${response.status})`,
@@ -121,6 +124,52 @@ export class CloudflareStreamService {
         'Réponse Cloudflare Stream invalide',
       );
     return payload.result;
+  }
+
+  async createLiveInput(id: string, isPrivate: boolean) {
+    const base = this.customerOrigin();
+    const input = await this.request<{ uid: string; webRTC?: { url: string } }>(
+      '/live_inputs', 'POST', {
+        meta: { name: `pyramidplay-live-${id}` },
+        recording: { mode: 'off', requireSignedURLs: isPrivate },
+      },
+    );
+    if (!input.webRTC?.url?.startsWith(`${base}/`) || !/^[a-f0-9]{32}$/i.test(input.uid)) {
+      await this.deleteLiveInput(input.uid);
+      throw new ServiceUnavailableException('Entrée Cloudflare WebRTC invalide');
+    }
+    return { uid: input.uid, publishUrl: input.webRTC.url };
+  }
+
+  private readonly liveTokens = new Map<string, { url: string; expiresAt: number }>();
+
+  async livePlaybackUrl(uid: string, isPrivate: boolean, accessExpiresAt?: number) {
+    const base = this.customerOrigin();
+    if (!isPrivate) return `${base}/${encodeURIComponent(uid)}/webRTC/play`;
+    const key = accessExpiresAt ? `${uid}:${accessExpiresAt}` : uid;
+    const cached = this.liveTokens.get(key);
+    if (cached && cached.expiresAt > Date.now() / 1000 + 60) return cached.url;
+    const { token, expiresAt } = await this.playbackToken(uid, accessExpiresAt);
+    const url = `${base}/${token}/webRTC/play`;
+    if (this.liveTokens.size >= 500) this.liveTokens.clear();
+    this.liveTokens.set(key, { url, expiresAt });
+    return url;
+  }
+
+  private customerOrigin() {
+    const customer = this.config.get<string>('CLOUDFLARE_STREAM_CUSTOMER_CODE');
+    if (!customer || !/^customer-[a-zA-Z0-9-]+$/.test(customer))
+      throw new ServiceUnavailableException('Code client Cloudflare invalide');
+    return `https://${customer}.cloudflarestream.com`;
+  }
+
+  deleteLiveInput(uid: string) {
+    for (const key of this.liveTokens.keys()) if (key === uid || key.startsWith(uid + ":")) this.liveTokens.delete(key);
+    return this.request<void>(`/live_inputs/${encodeURIComponent(uid)}`, 'DELETE');
+  }
+
+  deleteVideo(uid: string) {
+    return this.request<void>(`/${encodeURIComponent(uid)}`, 'DELETE');
   }
 
   copy(sourceUrl: string, mediaAssetId: string) {
@@ -154,8 +203,8 @@ export class CloudflareStreamService {
     );
   }
 
-  async playback(uid: string) {
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+  private async playbackToken(uid: string, accessExpiresAt?: number) {
+    const expiresAt = Math.min(Math.floor(Date.now() / 1000) + 3600, accessExpiresAt ?? Infinity);
     const result = await this.request<{ token: string }>(
       `/${encodeURIComponent(uid)}/token`,
       'POST',
@@ -169,15 +218,12 @@ export class CloudflareStreamService {
         'Jeton de lecture Cloudflare invalide',
       );
     }
-    const customer = this.config.get<string>(
-      'CLOUDFLARE_STREAM_CUSTOMER_CODE',
-    )!;
-    if (!/^customer-[a-zA-Z0-9-]+$/.test(customer))
-      throw new ServiceUnavailableException('Code client Cloudflare invalide');
-    return {
-      url: `https://${customer}.cloudflarestream.com/${result.token}/manifest/video.m3u8`,
-      expiresAt,
-    };
+    return { token: result.token, expiresAt };
+  }
+
+  async playback(uid: string, accessExpiresAt?: number) {
+    const { token, expiresAt } = await this.playbackToken(uid, accessExpiresAt);
+    return { url: `${this.customerOrigin()}/${token}/manifest/video.m3u8`, expiresAt };
   }
 
   verifyWebhook(body: Buffer, header?: string) {

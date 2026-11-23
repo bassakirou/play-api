@@ -95,6 +95,8 @@ describe('Global content write guard over HTTP', () => {
         isMonetized: true,
         price: 500,
         discountPrice: 400,
+        accessMode: 'DURATION',
+        accessDurationDays: 30,
         ignored: 'drop',
       })
       .expect(201);
@@ -103,6 +105,8 @@ describe('Global content write guard over HTTP', () => {
         isMonetized: true,
         price: 500,
         discountPrice: 400,
+        accessMode: 'DURATION',
+        accessDurationDays: 30,
       }),
     );
     expect(result.body).not.toHaveProperty('ignored');
@@ -117,6 +121,9 @@ describe('Global content write guard over HTTP', () => {
         isMonetized: true,
         price: 900,
         discountPrice: 800,
+        accessMode: 'PERIOD',
+        accessStartsAt: '2026-12-01T00:00:00.000Z',
+        accessEndsAt: '2026-12-31T00:00:00.000Z',
       })
       .expect(201);
     expect(result.body).toEqual(
@@ -124,6 +131,9 @@ describe('Global content write guard over HTTP', () => {
         isMonetized: true,
         price: 900,
         discountPrice: 800,
+        accessMode: 'PERIOD',
+        accessStartsAt: '2026-12-01T00:00:00.000Z',
+        accessEndsAt: '2026-12-31T00:00:00.000Z',
       }),
     );
   });

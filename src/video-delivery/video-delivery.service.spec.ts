@@ -102,6 +102,19 @@ describe('Hybrid publication and playback', () => {
     ).resolves.toHaveProperty('url');
   });
 
+  it('keeps cached playback tokens isolated by purchased expiration', async () => {
+    const { service, db, provider } = make();
+    const end = Math.floor(Date.now() / 1000) + 1800;
+    provider.playback = jest.fn(async (_uid, expiresAt) => ({ url: `signed:${expiresAt}`, expiresAt }));
+    db.userPurchasedContent.findUnique = async ({ where }) => ({ accessEndsAt: new Date((where.userId_contentId_contentType.userId === 'buyer-a' ? end : end - 600) * 1000) });
+    const first = await service.playback('video-1', { id: 'buyer-a' });
+    const second = await service.playback('video-1', { id: 'buyer-b' });
+    expect(first.expiresAt).toBe(end);
+    expect(second.expiresAt).toBe(end - 600);
+    expect(provider.playback).toHaveBeenCalledTimes(2);
+    db.userPurchasedContent.findUnique = async () => ({ accessEndsAt: new Date(Date.now() - 1) });
+    await expect(service.playback('video-1', { id: 'buyer-a' })).rejects.toThrow();
+  });
   it('grants paid playback only after checking the recorded purchase', async () => {
     const { service, db } = make();
     db.userPurchasedContent.findUnique = async ({ where }: any) => {

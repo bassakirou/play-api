@@ -8,6 +8,8 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { LivesService } from './lives.service';
 import { LiveSettingsService } from './live-settings.service';
@@ -30,18 +32,29 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Map socketId -> liveId
   private socketToRoom: Map<string, string> = new Map();
   // Map liveId -> host socket ID
+  private readonly accessTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly peerViewers = new Set<string>();
   private roomHosts: Map<string, string> = new Map();
 
   constructor(
     private readonly livesService: LivesService,
     private readonly liveSettingsService: LiveSettingsService,
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   handleConnection(client: Socket) {
     this.logger.log(`[LivesGateway] Client connecté: ${client.id}`);
   }
 
+  private clearAccessTimer(socketId: string) {
+    clearTimeout(this.accessTimers.get(socketId));
+    this.accessTimers.delete(socketId);
+  }
+
   async handleDisconnect(client: Socket) {
+    this.clearAccessTimer(client.id);
+    this.peerViewers.delete(client.id);
     const liveId = this.socketToRoom.get(client.id);
     if (liveId) {
       this.socketToRoom.delete(client.id);
@@ -78,23 +91,56 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('join_live')
   async handleJoinLive(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { liveId: string; user?: any; isHost?: boolean; token?: string },
+    @MessageBody() data: { liveId: string; user?: any; isHost?: boolean; token?: string; peerPlayback?: boolean },
   ) {
     const { liveId, isHost, token } = data;
     if (!liveId) return;
 
-    // Vérifier l'accès pour les lives privés
+    // Validate the socket identity before checking private access or assigning the host.
+    let userId: string | undefined;
+    const authToken = client.handshake.auth?.accessToken;
+    if (typeof authToken === 'string') {
+      try {
+        const claims = this.jwt.verify<{ sub: string }>(authToken, {
+          secret: this.config.get<string>('JWT_SECRET') || 'secretKey',
+        });
+        userId = claims.sub;
+      } catch {
+        // Guests can still join public lives or use an invitation.
+      }
+    }
+    let accessEndsAt: Date | null = null;
     try {
-      const live = await this.livesService.findOne(liveId, token, undefined, data.user?.id);
-      if (!live) {
+      const live = await this.livesService.findOne(liveId, token, undefined, userId, false);
+      if (live?.hasPlaybackAccess === false) {
+        client.emit('live:error', { message: 'Achetez l’accès à cette session pour la rejoindre.' });
+        return;
+      }
+      if (!live || (isHost && (!userId || live.hostId !== userId))) {
         client.emit('live:error', { message: 'Session Live introuvable.' });
         return;
       }
+      accessEndsAt = live.purchaseEndsAt;
     } catch (err: any) {
       client.emit('live:error', {
         message: err?.message || 'Accès refusé. Ce direct est privé.',
       });
       return;
+    }
+
+    this.clearAccessTimer(client.id);
+    if (!isHost && accessEndsAt) {
+      const expire = () => {
+        const remaining = accessEndsAt!.getTime() - Date.now();
+        if (remaining > 0) {
+          this.accessTimers.set(client.id, setTimeout(expire, Math.min(remaining, 2147483647)).unref());
+          return;
+        }
+        client.emit('live:error', { message: 'Votre accès à ce direct a expiré. Renouvelez votre abonnement pour le rejoindre.' });
+        client.disconnect();
+      };
+      if (accessEndsAt.getTime() <= Date.now()) { expire(); return; }
+      expire();
     }
 
     // Leave previous room if any
@@ -114,6 +160,7 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
     }
 
+    this.peerViewers.delete(client.id);
     client.join(`live_${liveId}`);
     this.socketToRoom.set(client.id, liveId);
 
@@ -127,6 +174,11 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
         liveId,
         viewerCount: currentViewers,
       });
+      for (const viewerSocketId of this.roomViewers.get(liveId) ?? []) {
+        if (this.peerViewers.has(viewerSocketId)) {
+          client.emit('webrtc:viewer_joined', { viewerSocketId, liveId });
+        }
+      }
       // Notify all current viewers that host is ready
       client.to(`live_${liveId}`).emit('webrtc:host_ready', {
         hostSocketId: client.id,
@@ -162,6 +214,9 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
       viewerCount,
     });
 
+    if (data.peerPlayback === false) return;
+    this.peerViewers.add(client.id);
+
     // Notify broadcaster/host that a viewer joined (to trigger WebRTC offer)
     const hostSocketId = this.roomHosts.get(liveId);
     if (hostSocketId) {
@@ -192,6 +247,7 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { liveId } = data;
     if (!liveId) return;
 
+    this.clearAccessTimer(client.id);
     client.leave(`live_${liveId}`);
     this.socketToRoom.delete(client.id);
 
@@ -323,6 +379,8 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { targetSocketId: string; offer: any; liveId: string },
   ) {
+    if (this.socketToRoom.get(client.id) !== data.liveId ||
+        this.socketToRoom.get(data.targetSocketId) !== data.liveId) return;
     this.server.to(data.targetSocketId).emit('webrtc:offer', {
       offer: data.offer,
       senderSocketId: client.id,
@@ -335,6 +393,8 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { targetSocketId: string; answer: any; liveId: string },
   ) {
+    if (this.socketToRoom.get(client.id) !== data.liveId ||
+        this.socketToRoom.get(data.targetSocketId) !== data.liveId) return;
     this.server.to(data.targetSocketId).emit('webrtc:answer', {
       answer: data.answer,
       senderSocketId: client.id,
@@ -347,6 +407,8 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { targetSocketId: string; candidate: any; liveId: string },
   ) {
+    if (this.socketToRoom.get(client.id) !== data.liveId ||
+        this.socketToRoom.get(data.targetSocketId) !== data.liveId) return;
     this.server.to(data.targetSocketId).emit('webrtc:ice_candidate', {
       candidate: data.candidate,
       senderSocketId: client.id,
@@ -359,6 +421,7 @@ export class LivesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { liveId: string; state: 'LIVE' | 'ENDED' | 'PAUSED' },
   ) {
+    if (this.roomHosts.get(data.liveId) !== client.id) return;
     this.server.to(`live_${data.liveId}`).emit('live:state_change', data);
   }
 }

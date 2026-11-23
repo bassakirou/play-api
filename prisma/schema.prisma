@@ -8,6 +8,9 @@ datasource db {
 }
 
 model User {
+  creatorPlans CreatorPlan[]
+  memberships CreatorMembership[] @relation("CreatorMembershipSubscriber")
+  creatorSubscribers CreatorMembership[] @relation("CreatorMembershipCreator")
   id               String          @id @default(uuid())
   email            String          @unique
   password         String
@@ -125,6 +128,10 @@ model Album {
   isMonetized Boolean       @default(false)
   price       Int           @default(0) // en XAF
   discountPrice Int?        // en XAF (optionnel)
+  accessDurationDays Int?
+  accessMode String @default("PERMANENT")
+  accessStartsAt DateTime?
+  accessEndsAt DateTime?
   artistId    String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -143,6 +150,10 @@ model Song {
   isMonetized Boolean       @default(false)
   price       Int           @default(0) // en XAF
   discountPrice Int?        // en XAF (optionnel)
+  accessDurationDays Int?
+  accessMode String @default("PERMANENT")
+  accessStartsAt DateTime?
+  accessEndsAt DateTime?
   audioUrl    String
   albumId     String?
   genreId     String?
@@ -214,6 +225,10 @@ model Video {
   isMonetized   Boolean         @default(false)
   price         Int             @default(0) // en XAF
   discountPrice Int?            // en XAF (optionnel)
+  accessDurationDays Int?
+  accessMode String @default("PERMANENT")
+  accessStartsAt DateTime?
+  accessEndsAt DateTime?
   category      String?
   tags          String[]        @default([])
   categoryId    String?
@@ -344,6 +359,10 @@ model Audiobook {
   isMonetized  Boolean            @default(false)
   price        Int                @default(0) // en XAF
   discountPrice Int?              // en XAF (optionnel)
+  accessDurationDays Int?
+  accessMode String @default("PERMANENT")
+  accessStartsAt DateTime?
+  accessEndsAt DateTime?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   authorUser   User?              @relation("UserAudiobooks", fields: [authorId], references: [id], onDelete: SetNull)
@@ -493,6 +512,14 @@ model VideoExternalProbe {
 }
 
 model LiveStream {
+  livePrice Int @default(0)
+  liveDiscountPrice Int?
+  replayPrice Int @default(0)
+  replayDiscountPrice Int?
+  accessMode String @default("PERMANENT")
+  accessStartsAt DateTime?
+  accessEndsAt DateTime?
+  accessDurationDays Int?
   id            String         @id @default(uuid())
   title         String
   description   String?
@@ -520,6 +547,10 @@ model LiveStream {
   endedAt       DateTime?
   retentionDays Int            @default(3) // 0 = delete immediately, 1-7 days retention
   recordingUrl  String?
+  cloudflareInputId String?
+  replaySourceObject String?
+  cloudflareReplayId String?
+  cloudflareReplayStatus String @default("PENDING")
   isRecorded    Boolean        @default(false)
   cleanupAt     DateTime?
   isCleanedUp   Boolean        @default(false)
@@ -572,6 +603,10 @@ model AcademicCourse {
   isMonetized      Boolean            @default(false)
   price            Int                @default(0)
   discountPrice    Int?
+  accessDurationDays Int?
+  accessMode String @default("PERMANENT")
+  accessStartsAt DateTime?
+  accessEndsAt DateTime?
   isBestseller     Boolean            @default(false)
   learningOutcomes String[]           @default([])
   requirements     String[]           @default([])
@@ -739,6 +774,7 @@ model UserSubscription {
 }
 
 model Transaction {
+  creatorMembership CreatorMembership?
   id                  String            @id @default(uuid())
   paymentId           String?           @unique // Identifiant unique renvoyé par Tara Money
   productId           String            @unique // Référence unique générée pour l'appel Tara
@@ -773,6 +809,8 @@ model Transaction {
 }
 
 model UserPurchasedContent {
+  accessStartsAt DateTime?
+  accessEndsAt DateTime?
   id          String   @id @default(uuid())
   userId      String
   contentId   String   // ID du Single, Album, Video ou Audiobook
@@ -834,3 +872,35 @@ model WithdrawalRequest {
 }
 
 
+
+
+model CreatorPlan {
+  id String @id @default(uuid())
+  creatorId String
+  creator User @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  name String
+  description String
+  price Int
+  cadence String
+  contentTypes String[]
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([creatorId, active])
+}
+
+model CreatorMembership {
+  id String @id @default(uuid())
+  subscriberId String
+  subscriber User @relation("CreatorMembershipSubscriber", fields: [subscriberId], references: [id], onDelete: Cascade)
+  creatorId String
+  creator User @relation("CreatorMembershipCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  planId String
+  planName String
+  contentTypes String[]
+  transactionId String @unique
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  startsAt DateTime
+  endsAt DateTime
+  @@index([subscriberId, creatorId, endsAt])
+}

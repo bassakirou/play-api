@@ -1,6 +1,34 @@
-import { IsString, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, Min, Max, IsNotEmpty } from 'class-validator';
+import { AccessPeriodDto } from '../../content-access/access-period.dto';
+import { IsString, IsOptional, IsEnum, IsArray, IsNumber, IsInt, IsBoolean, Min, Max, IsNotEmpty } from 'class-validator';
 
-export class CreateLiveDto {
+export class LivePricingDto extends AccessPeriodDto {
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
+  livePrice?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
+  liveDiscountPrice?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
+  replayPrice?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
+  replayDiscountPrice?: number | null;
+
+}
+
+export class CreateLiveDto extends LivePricingDto {
   @IsString()
   @IsNotEmpty()
   title: string;
@@ -75,7 +103,7 @@ export class CreateLiveDto {
   invitedEmails?: string[];
 }
 
-export class UpdateLiveDto {
+export class UpdateLiveDto extends LivePricingDto {
   @IsOptional()
   @IsString()
   title?: string;

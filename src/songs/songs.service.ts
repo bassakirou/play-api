@@ -1,3 +1,4 @@
+import { accessPeriodFields } from '../content-access/access-period';
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -152,6 +153,7 @@ export class SongsService {
     const primaryGenreId = finalGenreIds[0];
 
     const data: any = {
+      ...accessPeriodFields(dto),
       title,
       duration: Number(duration),
       audioUrl,
@@ -220,6 +222,7 @@ export class SongsService {
     if (typeof updateSongDto?.price !== 'undefined') {
       updateData.price = Math.max(0, Math.round(Number(updateSongDto.price)));
     }
+    Object.assign(updateData, accessPeriodFields(updateSongDto));
     if (typeof updateSongDto?.discountPrice !== 'undefined') {
       updateData.discountPrice = updateSongDto.discountPrice ? Math.max(0, Math.round(Number(updateSongDto.discountPrice))) : null;
     }

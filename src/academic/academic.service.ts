@@ -1,3 +1,5 @@
+import { membershipExpiry } from '../monetization/creator-memberships';
+import { isPurchaseActive, validateAccessPeriod, accessPeriodFields } from '../content-access/access-period';
 import { MediaSourceOwnershipService } from '../content-access/media-source-ownership.service';
 import {
   Injectable,
@@ -25,7 +27,12 @@ export class AcademicService {
     isMonetized?: boolean;
     price?: number;
     discountPrice?: number | null;
+    accessMode?: string;
+    accessDurationDays?: number | null;
+    accessStartsAt?: string | Date | null;
+    accessEndsAt?: string | Date | null;
   }) {
+    validateAccessPeriod(course);
     if (
       course.price !== undefined &&
       (!Number.isInteger(course.price) || course.price < 0)
@@ -57,7 +64,7 @@ export class AcademicService {
   ) {
     const isPurchased =
       !!userId &&
-      !!(await this.prisma.userPurchasedContent.findUnique({
+      isPurchaseActive(await this.prisma.userPurchasedContent.findUnique({
         where: {
           userId_contentId_contentType: {
             userId,
@@ -66,12 +73,13 @@ export class AcademicService {
           },
         },
       }));
+    const subscribed = !isPurchased && Boolean(await membershipExpiry(this.prisma, userId, 'COURSE', course.id));
     const isManager =
       !!userId &&
       (course.instructorId === userId ||
         (await this.subscriptions.isAdmin(userId)));
     return {
-      hasAccess: !course.isMonetized || isPurchased || isManager,
+      hasAccess: !course.isMonetized || isPurchased || subscribed || isManager,
       isPurchased,
       isManager,
     };
@@ -272,6 +280,7 @@ export class AcademicService {
 
     return this.prisma.academicCourse.create({
       data: {
+        ...accessPeriodFields(dto),
         isMonetized: dto.isMonetized ?? false,
         price: dto.price ?? 0,
         discountPrice: dto.discountPrice,

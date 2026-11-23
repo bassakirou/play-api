@@ -18,6 +18,14 @@ describe('Cloudflare Stream boundary', () => {
     global.fetch = originalFetch;
   });
 
+  it('bounds a signed playback token by the purchased expiration', async () => {
+    const request = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true, result: { token: 'signed-token' } }) });
+    global.fetch = request;
+    const expiresAt = Math.floor(Date.now() / 1000) + 120;
+    const service = new CloudflareStreamService(config(values));
+    expect((await service.playback('video', expiresAt)).expiresAt).toBe(expiresAt);
+    expect(JSON.parse(request.mock.calls[0][1].body).exp).toBe(expiresAt);
+  });
   it('does not make an external request while disabled or incompletely configured', async () => {
     const request = jest.fn();
     global.fetch = request;
@@ -29,6 +37,25 @@ describe('Cloudflare Stream boundary', () => {
       ).rejects.toThrow();
     }
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it('uses an input-specific signed WHEP URL for a private broadcast', async () => {
+    const uid = 'a'.repeat(32);
+    const publishUrl = 'https://customer-test.cloudflarestream.com/publish-secret/webRTC/publish';
+    const request = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true, result: { uid, webRTC: { url: publishUrl } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true, result: { token: 'signed-token' } }) })
+      .mockResolvedValueOnce({ ok: true, status: 204 });
+    global.fetch = request;
+    const service = new CloudflareStreamService(config(values));
+
+    expect(await service.createLiveInput('live-id', true)).toEqual({ uid, publishUrl });
+    expect(JSON.parse(request.mock.calls[0][1].body).recording)
+      .toEqual({ mode: 'off', requireSignedURLs: true });
+    expect(await service.livePlaybackUrl(uid, true))
+      .toBe('https://customer-test.cloudflarestream.com/signed-token/webRTC/play');
+    expect(request.mock.calls[1][0]).toMatch(new RegExp(`/stream/${uid}/token$`));
+    await expect(service.deleteLiveInput(uid)).resolves.toBeUndefined();
   });
 
   it('uploads a copy requiring signed playback without exposing the original as public playback', async () => {

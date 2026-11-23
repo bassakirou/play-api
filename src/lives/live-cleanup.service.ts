@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron, CronExpression, Interval } from '@nestjs/schedule';
 import { LivesService } from './lives.service';
 
 @Injectable()
@@ -7,6 +7,11 @@ export class LiveCleanupService {
   private readonly logger = new Logger(LiveCleanupService.name);
 
   constructor(private readonly livesService: LivesService) {}
+
+  @Interval(30_000)
+  async syncReplays() {
+    await this.livesService.syncCloudflareReplays();
+  }
 
   @Cron(CronExpression.EVERY_HOUR)
   async handleHourlyCleanup() {

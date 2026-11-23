@@ -1,3 +1,4 @@
+import { accessPeriodFields } from '../content-access/access-period';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAudiobookDto } from './dto/create-audiobook.dto';
@@ -174,6 +175,7 @@ export class AudiobooksService {
         category: dto.category || 'Général',
         isTrending: dto.isTrending ?? false,
         rating: dto.rating ?? 5.0,
+        ...accessPeriodFields(dto),
         isMonetized: Boolean(dto.isMonetized),
         price: dto.isMonetized && dto.price ? Number(dto.price) : 0,
         discountPrice: dto.isMonetized && dto.discountPrice ? Number(dto.discountPrice) : null,
@@ -214,6 +216,7 @@ export class AudiobooksService {
     await this.findOne(id);
 
     const updateData: any = {
+      ...accessPeriodFields(dto),
       ...(dto.title !== undefined && { title: dto.title }),
       ...(dto.author !== undefined && { author: dto.author }),
       ...(dto.narrator !== undefined && { narrator: dto.narrator || null }),

@@ -1,3 +1,4 @@
+import { AccessPeriodDto } from '../../content-access/access-period.dto';
 import {
   IsString,
   IsNotEmpty,
@@ -9,7 +10,7 @@ import {
   Min,
 } from 'class-validator';
 
-export class CreateCourseDto {
+export class CreateCourseDto extends AccessPeriodDto {
   @IsBoolean()
   @IsOptional()
   isMonetized?: boolean;
@@ -77,7 +78,7 @@ export class CreateCourseDto {
   instructorTitle?: string;
 }
 
-export class UpdateCourseDto {
+export class UpdateCourseDto extends AccessPeriodDto {
   @IsBoolean()
   @IsOptional()
   isMonetized?: boolean;

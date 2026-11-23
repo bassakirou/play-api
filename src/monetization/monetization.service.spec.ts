@@ -3,7 +3,7 @@ import { MonetizationService } from './monetization.service';
 describe('payment confirmation', () => {
   let db: any; let tara: any; let service: MonetizationService;
   beforeEach(() => {
-    db = { transaction: { findFirst: jest.fn().mockResolvedValue({ id: 'tx', productId: 'p', userId: 'buyer', amount: 100, status: 'PENDING' }), update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) }, userPurchasedContent: { upsert: jest.fn() }, $transaction: jest.fn() };
+    db = { transaction: { findFirst: jest.fn().mockResolvedValue({ id: 'tx', productId: 'p', userId: 'buyer', amount: 100, status: 'PENDING' }), update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) }, userPurchasedContent: { upsert: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) }, $queryRaw: jest.fn().mockResolvedValue([]), $transaction: jest.fn() };
     db.$transaction.mockImplementation((callback: any) => callback(db));
     tara = { getConfig: jest.fn().mockResolvedValue({ taraBusinessId: 'business' }), getTransactionStatus: jest.fn().mockResolvedValue({ productId: 'p', status: 'PENDING', amount: 100 }) };
     service = new MonetizationService(db, tara);

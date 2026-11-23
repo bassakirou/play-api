@@ -1,3 +1,4 @@
+import { accessPeriodFields } from '../content-access/access-period';
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MinioService } from '../storage/minio.service';
@@ -263,6 +264,7 @@ export class VideosService {
         thumbnailUrl: thumbnailUrl || null,
         duration: Math.trunc(duration),
         isAcademic: Boolean(body?.isAcademic),
+        ...accessPeriodFields(body),
         isMonetized: Boolean(body?.isMonetized),
         price: body?.isMonetized && body?.price ? Number(body.price) : 0,
         discountPrice: body?.isMonetized && body?.discountPrice ? Number(body.discountPrice) : null,

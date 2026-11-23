@@ -1,3 +1,4 @@
+import { AccessPeriodDto } from '../../content-access/access-period.dto';
 import {
   IsString,
   IsNotEmpty,
@@ -9,7 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class CreateAlbumDto {
+export class CreateAlbumDto extends AccessPeriodDto {
   @ApiProperty({ required: false })
   @IsBoolean()
   @IsOptional()

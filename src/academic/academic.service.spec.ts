@@ -116,6 +116,16 @@ describe('Academic publishing and learner access', () => {
       id: 'enrollment',
     });
   });
+  it.each([
+    { accessEndsAt: new Date(Date.now() - 1000) },
+    { accessStartsAt: new Date(Date.now() + 100000), accessEndsAt: new Date(Date.now() + 200000) },
+  ])('locks paid lessons and enrollment outside the purchased interval', async purchase => {
+    prisma.userPurchasedContent.findUnique.mockResolvedValue(purchase);
+    const result = await service.findOne('course', 'learner');
+    expect(result.hasAccess).toBe(false);
+    expect(result.modules[0].lessons[0]).not.toHaveProperty('notes');
+    await expect(service.enroll('learner', 'course')).rejects.toThrow();
+  });
   it('grants paid lessons to a purchaser without checking the instructor subscription', async () => {
     prisma.userPurchasedContent.findUnique.mockResolvedValue({
       id: 'purchase',

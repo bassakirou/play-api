@@ -1,3 +1,4 @@
+import { validateAccessPeriod } from './access-period';
 import { MediaSourceOwnershipService } from './media-source-ownership.service';
 import {
   BadRequestException,
@@ -267,6 +268,7 @@ export class ContentWriteGuard implements CanActivate {
   }
 
   private validatePrice(item: any) {
+    validateAccessPeriod(item);
     if (item.isMonetized !== undefined && typeof item.isMonetized !== 'boolean')
       throw new BadRequestException('isMonetized doit être un booléen');
     if (
