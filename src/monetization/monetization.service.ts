@@ -10,6 +10,8 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
+import defaultGiftArtwork from './default-gift-artwork.json';
+import { giftImageReference, publicGiftIconUrl } from './gift-catalog-artwork';
 import { PrismaService } from '../prisma/prisma.service';
 import { TaraService, TaraRequestRejectedError, type TaraMobilePayResponse } from '../tara/tara.service';
 import {
@@ -41,7 +43,7 @@ export class MonetizationService implements OnModuleInit {
             name: 'LION',
             label: 'Lion Royal',
             amount: 100000,
-            iconUrl: '/gifts/lion.png',
+            iconUrl: defaultGiftArtwork.LION.url,
             description: 'Symbole de puissance, royauté et fierté ancestrale',
             order: 1,
           },
@@ -49,7 +51,7 @@ export class MonetizationService implements OnModuleInit {
             name: 'BAOBAB',
             label: 'Baobab Sacré',
             amount: 25000,
-            iconUrl: '/gifts/baobab.png',
+            iconUrl: defaultGiftArtwork.BAOBAB.url,
             description: 'Symbole de longévité, sagesse et ancrage',
             order: 2,
           },
@@ -57,7 +59,7 @@ export class MonetizationService implements OnModuleInit {
             name: 'MASQUE',
             label: 'Masque Cérémoniel',
             amount: 10000,
-            iconUrl: '/gifts/mask.png',
+            iconUrl: defaultGiftArtwork.MASQUE.url,
             description: 'Symbole des ancêtres et de transmission',
             order: 3,
           },
@@ -65,7 +67,7 @@ export class MonetizationService implements OnModuleInit {
             name: 'DJEMBE',
             label: 'Djembé Rythmique',
             amount: 5000,
-            iconUrl: '/gifts/djembe.png',
+            iconUrl: defaultGiftArtwork.DJEMBE.url,
             description: 'Symbole du battement de cœur de l’Afrique',
             order: 4,
           },
@@ -73,7 +75,7 @@ export class MonetizationService implements OnModuleInit {
             name: 'TORTUE',
             label: 'Tortue de la Sagesse',
             amount: 2000,
-            iconUrl: '/gifts/turtle.png',
+            iconUrl: defaultGiftArtwork.TORTUE.url,
             description: 'Symbole de patience, protection et persévérance',
             order: 5,
           },
@@ -81,14 +83,12 @@ export class MonetizationService implements OnModuleInit {
             name: 'CAURIS',
             label: 'Cauris Sacré',
             amount: 500,
-            iconUrl: '/gifts/cowrie.png',
+            iconUrl: defaultGiftArtwork.CAURIS.url,
             description: 'Symbole de prospérité, divination et bénédiction',
             order: 6,
           },
         ];
-        for (const item of defaults) {
-          await this.prisma.giftCatalog.create({ data: item });
-        }
+        await this.prisma.giftCatalog.createMany({ data: defaults, skipDuplicates: true });
         this.logger.log('Default African cosmogony gifts seeded successfully');
       }
     } catch (err) {
@@ -140,10 +140,11 @@ export class MonetizationService implements OnModuleInit {
   }
 
   async getGiftCatalog(onlyActive = true) {
-    return this.prisma.giftCatalog.findMany({
+    const gifts = await this.prisma.giftCatalog.findMany({
       where: onlyActive ? { isActive: true } : {},
       orderBy: [{ order: 'asc' }, { amount: 'asc' }],
     });
+    return gifts.map((gift) => ({ ...gift, iconUrl: publicGiftIconUrl(gift.iconUrl) }));
   }
 
   async createGiftItem(dto: CreateGiftCatalogDto) {
@@ -168,6 +169,13 @@ export class MonetizationService implements OnModuleInit {
   }
 
   async updateGiftItem(id: string, dto: UpdateGiftCatalogDto) {
+    if (dto.iconUrl === undefined) {
+      const gift = await this.prisma.giftCatalog.findUnique({ where: { id }, select: { iconUrl: true } });
+      if (!gift) throw new NotFoundException('Cadeau introuvable.');
+      if (!giftImageReference.test(gift.iconUrl.trim())) {
+        throw new BadRequestException('Une image de cadeau valide est obligatoire.');
+      }
+    }
     return this.prisma.giftCatalog.update({
       where: { id },
       data: dto,
@@ -178,67 +186,6 @@ export class MonetizationService implements OnModuleInit {
     return this.prisma.giftCatalog.delete({
       where: { id },
     });
-  }
-
-  async seedDefaultAfricanGifts() {
-    const count = await this.prisma.giftCatalog.count();
-    if (count === 0) {
-      const defaultGifts = [
-        {
-          name: 'CAURIS',
-          label: 'Cauris Sacré',
-          amount: 500,
-          iconUrl: '/assets/gifts/cauris.svg',
-          description:
-            'Symbole ancestral de prospérité et bénédiction en Afrique.',
-          order: 1,
-        },
-        {
-          name: 'TORTUE',
-          label: 'Tortue de la Sagesse',
-          amount: 2500,
-          iconUrl: '/assets/gifts/tortue.svg',
-          description: 'Symbole de longévité, persévérance et respect.',
-          order: 2,
-        },
-        {
-          name: 'BAOBAB',
-          label: 'Baobab Millénaire',
-          amount: 10000,
-          iconUrl: '/assets/gifts/baobab.svg',
-          description: 'Arbre de vie, force vitale et enracinement.',
-          order: 3,
-        },
-        {
-          name: 'PANTHERE',
-          label: 'Panthère Noire',
-          amount: 25000,
-          iconUrl: '/assets/gifts/panthere.svg',
-          description: 'Noblesse, agilité et distinction royale.',
-          order: 4,
-        },
-        {
-          name: 'ELEPHANT',
-          label: 'Éléphant Majestueux',
-          amount: 50000,
-          iconUrl: '/assets/gifts/elephant.svg',
-          description: 'Puissance immuable et grandeur continentale.',
-          order: 5,
-        },
-        {
-          name: 'LION',
-          label: 'Lion Royal Indomptable',
-          amount: 100000,
-          iconUrl: '/assets/gifts/lion.svg',
-          description: 'Hommage suprême de souveraineté et courage.',
-          order: 6,
-        },
-      ];
-
-      for (const gift of defaultGifts) {
-        await this.prisma.giftCatalog.create({ data: gift });
-      }
-    }
   }
 
   private offerVersion(item: any) {

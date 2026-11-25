@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Post,
   Put,
   Delete,
@@ -89,15 +90,14 @@ export class MonetizationController {
   }
 
   @Get('gifts/catalog')
+  @Header('Cache-Control', 'no-store')
   async getPublicGiftCatalog() {
-    await this.monetizationService.seedDefaultAfricanGifts();
     return this.monetizationService.getGiftCatalog(true);
   }
 
   @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Get('admin/gifts')
   async getAdminGiftCatalog() {
-    await this.monetizationService.seedDefaultAfricanGifts();
     return this.monetizationService.getGiftCatalog(false);
   }
 

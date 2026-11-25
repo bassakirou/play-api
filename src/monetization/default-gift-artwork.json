@@ -1,0 +1,8 @@
+{
+  "LION": { "url": "/gifts/artwork/lion.png", "legacy": ["/gifts/lion.png", "/assets/gifts/lion.svg"] },
+  "BAOBAB": { "url": "/gifts/artwork/arbre.png", "legacy": ["/gifts/baobab.png", "/assets/gifts/baobab.svg"] },
+  "MASQUE": { "url": "/gifts/artwork/masque.png", "legacy": ["/gifts/mask.png"] },
+  "DJEMBE": { "url": "/gifts/artwork/tam-tam.png", "legacy": ["/gifts/djembe.png"] },
+  "TORTUE": { "url": "/gifts/artwork/tortue.png", "legacy": ["/gifts/turtle.png", "/assets/gifts/tortue.svg"] },
+  "CAURIS": { "url": "/gifts/artwork/cauris.png", "legacy": ["/gifts/cowrie.png", "/assets/gifts/cauris.svg"] }
+}

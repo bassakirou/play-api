@@ -1,4 +1,8 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsBoolean, IsIn, IsInt, Min, Matches, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, IsBoolean, IsIn, IsInt, Min, Matches, IsUUID, ValidateIf, Max } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { giftImageReference } from '../gift-catalog-artwork';
+
+const trimText = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value;
 
 export class UpdateMonetizationConfigDto {
   @IsString()
@@ -51,20 +55,24 @@ export class UpdateMonetizationConfigDto {
 }
 
 export class CreateGiftCatalogDto {
+  @Transform(trimText)
   @IsString()
   @IsNotEmpty()
   name: string; // ex:  LION, TORTUE, CAURIS
 
+  @Transform(trimText)
   @IsString()
   @IsNotEmpty()
   label: string; // ex: Le Lion Royal
 
-  @IsNumber()
-  @IsNotEmpty()
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
   amount: number; // en XAF
 
+  @Transform(trimText)
   @IsString()
-  @IsNotEmpty()
+  @Matches(giftImageReference, { message: 'Une image de cadeau valide est obligatoire.' })
   iconUrl: string;
 
   @IsString()
@@ -77,16 +85,22 @@ export class CreateGiftCatalogDto {
 }
 
 export class UpdateGiftCatalogDto {
+  @Transform(trimText)
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
+  @ValidateIf((_, value) => value !== undefined)
   label?: string;
 
-  @IsNumber()
-  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  @ValidateIf((_, value) => value !== undefined)
   amount?: number;
 
+  @Transform(trimText)
   @IsString()
-  @IsOptional()
+  @Matches(giftImageReference, { message: 'Une image de cadeau valide est obligatoire.' })
+  @ValidateIf((_, value) => value !== undefined)
   iconUrl?: string;
 
   @IsString()

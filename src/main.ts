@@ -72,6 +72,10 @@ async function bootstrap() {
   (app as any).useStaticAssets(join(process.cwd(), 'uploads', 'images'), {
     prefix: '/uploads/images',
   });
+  app.useStaticAssets(resolve(__dirname, '../../../packages/images/gifts'), {
+    prefix: '/gifts/artwork',
+    index: false,
+  });
 
   const preferredPort = process.env.PORT ? Number(process.env.PORT) : 3022;
   const fallbackPorts = [preferredPort, 3023, 3024, 3025].filter(
