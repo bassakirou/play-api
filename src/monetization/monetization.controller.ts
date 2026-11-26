@@ -17,6 +17,7 @@ import { MonetizationService } from './monetization.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatorPlanDto } from './dto/creator-plan.dto';
 import {
+  AssignAudiobookPublisherDto,
   UpdateMonetizationConfigDto,
   CreateGiftCatalogDto,
   UpdateGiftCatalogDto,
@@ -59,6 +60,18 @@ export class MonetizationController {
   @Get('admin/config')
   async getConfig(@Request() req: any) {
     return this.monetizationService.getAdminConfig();
+  }
+
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
+  @Get('admin/audiobook-publishers')
+  listAudiobookPublishers() {
+    return this.monetizationService.listAudiobookPublishers();
+  }
+
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
+  @Put('admin/audiobooks/:id/publisher')
+  assignAudiobookPublisher(@Param('id') id: string, @Body() dto: AssignAudiobookPublisherDto) {
+    return this.monetizationService.assignAudiobookPublisher(id, dto.publisherId);
   }
 
   @UseGuards(JwtAuthGuard, FinancialAdminGuard)

@@ -134,4 +134,49 @@ describe('payment confirmation', () => {
     expect(tara.initiateMobilePay).not.toHaveBeenCalled();
   });
 
+  describe('audiobook gifts', () => {
+    const dto = { audiobookId: 'book-1', giftCatalogId: 'gift', phoneNumber: '237699999999' };
+
+    beforeEach(() => {
+      db.transaction.findFirst.mockResolvedValue(null);
+      db.transaction.create = jest.fn().mockResolvedValue({ id: 'gift-tx', metadata: { audiobookId: dto.audiobookId } });
+      db.giftCatalog = { findUnique: jest.fn().mockResolvedValue({ id: 'gift', name: 'LION', label: 'Lion', amount: 1000, isActive: true }) };
+      db.audiobook = { findUnique: jest.fn().mockResolvedValue({ title: 'Contes', authorId: 'author', publisherId: 'publisher' }) };
+      db.artist = { findUnique: jest.fn() };
+      tara.getConfig.mockResolvedValue({ platformFeePercent: 30 });
+      tara.normalizePhoneNumber = (phone: string) => phone;
+      tara.initiateMobilePay = jest.fn().mockResolvedValue({ status: 'PENDING' });
+    });
+
+    it('records the publisher’s share and sends the full amount to Tara without requiring an artist profile', async () => {
+      await service.sendGift('buyer', dto, 'https://local.test');
+      expect(db.artist.findUnique).not.toHaveBeenCalled();
+      expect(db.transaction.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          beneficiaryUserId: 'publisher',
+          platformFee: 300,
+          creatorShare: 700,
+          giftTransaction: { create: expect.objectContaining({ giftCatalogId: 'gift', senderUserId: 'buyer' }) },
+        }),
+      });
+      expect(tara.initiateMobilePay).toHaveBeenCalledWith(expect.objectContaining({ productPrice: 1000 }));
+    });
+
+    it('does not attempt a collection when the only associated account is the author', async () => {
+      db.audiobook.findUnique.mockResolvedValue({ title: 'Contes', authorId: 'author', publisherId: null });
+      await expect(service.sendGift('buyer', dto, 'https://local.test')).rejects.toThrow('compte de publication');
+      expect(db.transaction.create).not.toHaveBeenCalled();
+      expect(tara.initiateMobilePay).not.toHaveBeenCalled();
+    });
+
+    it('keeps a retry bound to the same book without resolving a changed publisher', async () => {
+      db.transaction.findFirst.mockResolvedValue({
+        id: 'gift-tx', status: 'PENDING', metadata: { audiobookId: dto.audiobookId, giftCatalogId: dto.giftCatalogId },
+      });
+      await expect(service.sendGift('buyer', dto, 'https://local.test')).resolves.toMatchObject({ reused: true });
+      await expect(service.sendGift('buyer', { ...dto, audiobookId: 'book-2' }, 'https://local.test')).rejects.toThrow('Demande déjà utilisée');
+      expect(db.audiobook.findUnique).not.toHaveBeenCalled();
+      expect(tara.initiateMobilePay).not.toHaveBeenCalled();
+    });
+  });
 });

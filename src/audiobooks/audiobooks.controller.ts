@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
@@ -66,8 +67,8 @@ export class AudiobooksController {
   @UseGuards(JwtAuthGuard)
   @Post()
   @ApiOperation({ summary: 'Créer un nouveau livre audio' })
-  create(@Body() dto: CreateAudiobookDto) {
-    return this.audiobooksService.create(dto);
+  create(@Request() req: { user: { id: string } }, @Body() dto: CreateAudiobookDto) {
+    return this.audiobooksService.create(dto, req.user.id);
   }
 
   @ApiBearerAuth()

@@ -34,6 +34,7 @@ model User {
   followingArtists Artist[]        @relation("UserFollowsArtist")
   videos           Video[]
   audiobooks       Audiobook[]     @relation("UserAudiobooks")
+  publishedAudiobooks Audiobook[]  @relation("PublishedAudiobooks")
   mediaAssets      MediaAsset[]
   lives            LiveStream[]    @relation("UserLives")
   liveComments     LiveComment[]
@@ -347,6 +348,7 @@ model Audiobook {
   title        String
   author       String
   authorId     String?
+  publisherId  String?
   narrator     String?
   description  String?
   coverUrl     String?
@@ -366,7 +368,10 @@ model Audiobook {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   authorUser   User?              @relation("UserAudiobooks", fields: [authorId], references: [id], onDelete: SetNull)
+  publisher    User?              @relation("PublishedAudiobooks", fields: [publisherId], references: [id], onDelete: SetNull)
   chapters     AudiobookChapter[]
+
+  @@index([publisherId])
 }
 
 model AudiobookChapter {
@@ -832,14 +837,14 @@ model GiftTransaction {
   transactionId String       @unique
   giftCatalogId String
   senderUserId  String?
-  recipientArtistId String
+  recipientArtistId String?
   message       String?
   createdAt     DateTime     @default(now())
 
   transaction   Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   gift          GiftCatalog  @relation(fields: [giftCatalogId], references: [id], onDelete: Cascade)
   sender        User?        @relation("SentGifts", fields: [senderUserId], references: [id], onDelete: SetNull)
-  recipient     Artist       @relation("ArtistReceivedGifts", fields: [recipientArtistId], references: [id], onDelete: Cascade)
+  recipient     Artist?      @relation("ArtistReceivedGifts", fields: [recipientArtistId], references: [id], onDelete: Cascade)
 
   @@index([recipientArtistId])
   @@index([senderUserId])

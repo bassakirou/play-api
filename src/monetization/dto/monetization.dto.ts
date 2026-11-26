@@ -159,7 +159,12 @@ export class SendGiftDto {
 
   @IsString()
   @IsNotEmpty()
-  recipientArtistId: string;
+  @IsOptional()
+  recipientArtistId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  audiobookId?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -169,6 +174,11 @@ export class SendGiftDto {
   @IsString()
   @IsOptional()
   message?: string;
+}
+
+export class AssignAudiobookPublisherDto {
+  @IsUUID()
+  publisherId: string;
 }
 
 export class SubscribeAcademicDto {

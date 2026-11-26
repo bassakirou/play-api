@@ -543,9 +543,33 @@ export class MonetizationService implements OnModuleInit {
     };
   }
 
+  listAudiobookPublishers() {
+    return this.prisma.user.findMany({
+      select: { id: true, name: true, email: true, systemRoles: true, role: { select: { name: true } } },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  async assignAudiobookPublisher(id: string, publisherId: string) {
+    const publisher = await this.prisma.user.findUnique({
+      where: { id: publisherId },
+      select: { id: true },
+    });
+    if (!publisher) throw new NotFoundException('Compte de publication introuvable.');
+    const updated = await this.prisma.audiobook.updateMany({
+      where: { id },
+      data: { publisherId: publisher.id },
+    });
+    if (!updated.count) throw new NotFoundException('Livre audio introuvable.');
+    return { publisherId: publisher.id };
+  }
+
   async sendGift(userId: string | null, dto: SendGiftDto, hostBaseUrl: string) {
     if (!userId)
       throw new ForbiddenException('Connectez-vous pour envoyer un cadeau.');
+    if (Boolean(dto.audiobookId) === Boolean(dto.recipientArtistId)) {
+      throw new BadRequestException('Indiquez un seul bénéficiaire de cadeau.');
+    }
     const productId = dto.requestId
       ? 'GIFT-' +
         createHash('sha256')
@@ -556,7 +580,8 @@ export class MonetizationService implements OnModuleInit {
       const metadata = existing.metadata || {};
       if (
         metadata.giftCatalogId !== dto.giftCatalogId ||
-        metadata.recipientArtistId !== dto.recipientArtistId
+        (metadata.recipientArtistId ?? undefined) !== (dto.recipientArtistId ?? undefined) ||
+        (metadata.audiobookId ?? undefined) !== (dto.audiobookId ?? undefined)
       )
         throw new BadRequestException(
           'Demande déjà utilisée pour un autre cadeau.',
@@ -583,14 +608,26 @@ export class MonetizationService implements OnModuleInit {
       throw new NotFoundException('Cadeau introuvable ou inactif.');
     }
 
-    const artist = await this.prisma.artist.findUnique({
-      where: { id: dto.recipientArtistId },
-    });
-    if (!artist) {
-      throw new NotFoundException('Artiste bénéficiaire introuvable.');
-    }
+    const audiobook = dto.audiobookId
+      ? await this.prisma.audiobook.findUnique({
+          where: { id: dto.audiobookId },
+          select: { title: true, publisherId: true },
+        })
+      : null;
+    if (dto.audiobookId && !audiobook)
+      throw new NotFoundException('Livre audio introuvable.');
+    if (audiobook && !audiobook.publisherId)
+      throw new BadRequestException('Le compte de publication de ce livre audio doit être confirmé.');
 
-    if (!artist.userId)
+    const artist = dto.recipientArtistId
+      ? await this.prisma.artist.findUnique({ where: { id: dto.recipientArtistId } })
+      : null;
+    if (dto.recipientArtistId && !artist)
+      throw new NotFoundException('Artiste bénéficiaire introuvable.');
+
+    const beneficiaryUserId = audiobook?.publisherId ?? artist?.userId;
+
+    if (!beneficiaryUserId)
       throw new BadRequestException('Compte bénéficiaire non défini.');
     const config = await this.getConfig();
     const platformFee = Math.round(
@@ -609,13 +646,22 @@ export class MonetizationService implements OnModuleInit {
           creatorShare,
           status: 'PENDING',
           phoneNumber: this.taraService.normalizePhoneNumber(dto.phoneNumber),
-          beneficiaryArtistId: artist.id,
-          beneficiaryUserId: artist.userId,
+          beneficiaryArtistId: artist?.id,
+          beneficiaryUserId,
+          giftTransaction: {
+            create: {
+              giftCatalogId: gift.id,
+              senderUserId: userId,
+              recipientArtistId: artist?.id,
+              message: dto.message,
+            },
+          },
           metadata: {
             giftName: gift.name,
             giftLabel: gift.label,
             giftCatalogId: gift.id,
-            recipientArtistId: artist.id,
+            ...(artist && { recipientArtistId: artist.id }),
+            ...(dto.audiobookId && { audiobookId: dto.audiobookId }),
             message: dto.message,
           },
         },
@@ -629,22 +675,12 @@ export class MonetizationService implements OnModuleInit {
       return reuse(duplicate);
     }
 
-    await this.prisma.giftTransaction.create({
-      data: {
-        transactionId: transaction.id,
-        giftCatalogId: gift.id,
-        senderUserId: userId,
-        recipientArtistId: artist.id,
-        message: dto.message,
-      },
-    });
-
     const webHookUrl = hostBaseUrl + '/monetization/webhook/tara';
     const taraRes = await this.taraService
       .initiateMobilePay({
         productId,
         productName:
-          'Cadeau PyramidPlay - ' + gift.label + ' pour ' + artist.name,
+          'Cadeau PyramidPlay - ' + gift.label + ' pour ' + (audiobook?.title ?? artist?.name),
         productPrice: gift.amount,
         phoneNumber: dto.phoneNumber,
         webHookUrl,

@@ -56,6 +56,7 @@ export class AudiobooksService {
             email: true,
           },
         },
+        publisher: { select: { id: true, name: true } },
       },
       orderBy: [{ isTrending: 'desc' }, { createdAt: 'desc' }],
     });
@@ -75,6 +76,7 @@ export class AudiobooksService {
             email: true,
           },
         },
+        publisher: { select: { id: true, name: true } },
       },
     });
 
@@ -155,7 +157,7 @@ export class AudiobooksService {
     return Array.from(authorsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async create(dto: CreateAudiobookDto) {
+  async create(dto: CreateAudiobookDto, publisherId: string) {
     let authorName = dto.author;
     if (dto.authorId && (!authorName || authorName.trim().length === 0)) {
       const user = await this.prisma.user.findUnique({ where: { id: dto.authorId } });
@@ -169,6 +171,7 @@ export class AudiobooksService {
         title: dto.title,
         author: authorName,
         authorId: dto.authorId || null,
+        publisherId,
         narrator: dto.narrator || null,
         description: dto.description || null,
         coverUrl: dto.coverUrl || null,
