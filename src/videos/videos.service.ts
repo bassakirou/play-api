@@ -139,6 +139,8 @@ export class VideosService {
       artistId,
       channelId,
       userId: explicitUserId,
+      publisherId: _publisherId,
+      publisher: _publisher,
       tags,
       thumbnailUrl,
       videoPlaylistIds,
@@ -182,6 +184,7 @@ export class VideosService {
     const data: any = {
       ...rest,
       ...publication,
+      publisherId: publication.isPublished || publication.publishWhenReady ? userId : undefined,
       id: videoId,
       videoUrl: await this.delivery.sourceReference(videoId, mediaAssetId, rest.videoUrl),
       isAcademic: Boolean(dto.isAcademic),
@@ -269,6 +272,7 @@ export class VideosService {
         price: body?.isMonetized && body?.price ? Number(body.price) : 0,
         discountPrice: body?.isMonetized && body?.discountPrice ? Number(body.discountPrice) : null,
         ...publication,
+        publisherId: publication.isPublished || publication.publishWhenReady ? userId : undefined,
         category: taxonomy.categoryName,
         categoryId: taxonomy.categoryId,
         tags: taxonomy.tags.map((tag) => tag.name),
@@ -298,6 +302,8 @@ export class VideosService {
       artistIds,
       channelId,
       userId,
+      publisherId: _publisherId,
+      publisher: _publisher,
       tags,
       thumbnailUrl,
       videoUrl,
@@ -308,13 +314,20 @@ export class VideosService {
       ...rest
     } = updateVideoDto || {};
 
-    const data: Record<string, any> = { ...rest };
+    const editableFields = ['title', 'description', 'duration', 'genreId', 'isPublished', 'isAcademic', 'isMonetized', 'price', 'discountPrice'];
+    const data: Record<string, any> = {
+      ...accessPeriodFields(rest),
+      ...Object.fromEntries(editableFields.filter((key) => rest[key] !== undefined).map((key) => [key, rest[key]])),
+    };
     const publication = await this.delivery.preparePublication(
       mediaAssetId === undefined ? existing.mediaAssetId : mediaAssetId,
       typeof rest.isPublished === 'boolean' ? rest.isPublished : existing.isPublished || existing.publishWhenReady,
       caller || {},
     );
     Object.assign(data, publication);
+    const firstPublication = caller?.id && !existing.publisherId && !existing.isPublished &&
+      !existing.publishWhenReady && rest.isPublished === true;
+    if (firstPublication) data.publisherId = caller?.id;
     if (typeof rest.isAcademic !== 'undefined') {
       data.isAcademic = Boolean(rest.isAcademic);
     }
@@ -382,7 +395,7 @@ export class VideosService {
     };
 
     const updated = await (this.prisma as any).video.update({
-      where: { id },
+      where: { id, ...(firstPublication ? { publisherId: null, isPublished: false, publishWhenReady: false } : {}) },
       data: updateData,
       include: defaultInclude,
     });

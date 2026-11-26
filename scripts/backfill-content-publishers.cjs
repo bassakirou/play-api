@@ -19,6 +19,15 @@ const bookIds = [
   '77d47f07-54a0-415a-b846-01f79248371f',
 ];
 
+// Only the five videos identified in the owner's confirmation.
+const videoIds = [
+  'b1ef4552-d35f-4f62-b051-b66cfd6ce530',
+  '50b16aec-73bf-4619-83e0-c7e0d0753ad3',
+  'b33c2808-44eb-4a8f-a977-5f7d4fd191ad',
+  '1545aaee-77e6-476b-a4b4-d027b2617da0',
+  'fc1bc2b4-c63e-4afb-b758-4952b8446023',
+];
+
 async function main() {
   const production = process.argv.includes('--production');
   const envFile = resolve(__dirname, production ? '../.env' : '../.env.local');
@@ -30,20 +39,37 @@ async function main() {
 
   const db = new PrismaClient({ datasourceUrl: databaseUrl });
   try {
-    const count = await db.$transaction(async (tx) => {
-      const where = { id: { in: bookIds }, publisherId: null };
-      if (await tx.audiobook.count({ where }) === 0) return 0;
+    const updates = await db.$transaction(async (tx) => {
+      const jobs = [
+        { label: 'Audiobook', model: tx.audiobook, ids: bookIds },
+        { label: 'Video', model: tx.video, ids: videoIds },
+      ].map(({ label, model, ids }) => ({
+        label,
+        model,
+        where: { id: { in: ids }, publisherId: null },
+      }));
+
+      const pending = [];
+      for (const job of jobs) {
+        if (await job.model.count({ where: job.where })) pending.push(job);
+      }
+      if (!pending.length) return [];
 
       const account = await tx.user.findUnique({
         where: { email: publisherEmail },
         select: { id: true },
       });
-      if (!account) throw new Error('Confirmed audiobook publisher account was not found.');
+      if (!account) throw new Error('Confirmed publisher account was not found.');
 
-      const result = await tx.audiobook.updateMany({ where, data: { publisherId: account.id } });
-      return result.count;
+      const results = [];
+      for (const { label, model, where } of pending) {
+        const result = await model.updateMany({ where, data: { publisherId: account.id } });
+        results.push({ label, count: result.count });
+      }
+      return results;
     });
-    console.log(`Audiobook publishers assigned: ${count}.`);
+    for (const { label, count } of updates) console.log(`${label} publishers assigned: ${count}.`);
+    if (!updates.length) console.log('No confirmed publishers needed assignment.');
   } finally {
     await db.$disconnect();
   }

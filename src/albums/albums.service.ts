@@ -1,5 +1,6 @@
 import { accessPeriodFields } from '../content-access/access-period';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAlbumDto } from './dto/create-album.dto';
 import { MinioService } from '../storage/minio.service';
@@ -11,7 +12,7 @@ export class AlbumsService {
     private minio: MinioService,
   ) {}
 
-  async create(createAlbumDto: CreateAlbumDto) {
+  async create(createAlbumDto: CreateAlbumDto, publisherId: string) {
     const {
       title,
       year,
@@ -29,6 +30,7 @@ export class AlbumsService {
       artistId || (artistIds && artistIds.length ? artistIds[0] : null);
     const data: any = {
       ...accessPeriodFields(createAlbumDto),
+      publisher: { connect: { id: publisherId } },
       title,
       year: Number(year),
       coverUrl: coverUrl || null,
@@ -38,7 +40,7 @@ export class AlbumsService {
       price:
         isMonetized && price !== null && price !== undefined
           ? Number(price)
-          : null,
+          : 0,
       discountPrice:
         isMonetized && discountPrice !== null && discountPrice !== undefined
           ? Number(discountPrice)
@@ -112,7 +114,15 @@ export class AlbumsService {
   }
 
   update(id: string, updateAlbumDto: any) {
-    const data = { ...updateAlbumDto };
+    const editableFields = ['title', 'year', 'coverUrl', 'description', 'artistId', 'isAcademic', 'isMonetized', 'price', 'discountPrice'];
+    const data: Prisma.AlbumUncheckedUpdateInput = {
+      ...accessPeriodFields(updateAlbumDto),
+      ...Object.fromEntries(editableFields.filter((key) => updateAlbumDto[key] !== undefined)
+        .map((key) => [key, updateAlbumDto[key]])),
+      ...(Array.isArray(updateAlbumDto.groupIds)
+        ? { groups: { set: updateAlbumDto.groupIds.filter((id: unknown) => typeof id === 'string').map((id: string) => ({ id })) } }
+        : {}),
+    };
     if (typeof data.isAcademic !== 'undefined') {
       data.isAcademic = Boolean(data.isAcademic);
     }
@@ -120,7 +130,7 @@ export class AlbumsService {
       data.isMonetized = Boolean(data.isMonetized);
     }
     if (typeof data.price !== 'undefined') {
-      data.price = data.price !== null ? Number(data.price) : null;
+      data.price = data.price !== null ? Number(data.price) : 0;
     }
     if (typeof data.discountPrice !== 'undefined') {
       data.discountPrice =

@@ -11,13 +11,15 @@ import {
   UseGuards,
   Request,
   Req,
+  ParseEnumPipe,
 } from '@nestjs/common';
 import { FinancialAdminGuard } from './financial-admin.guard';
 import { MonetizationService } from './monetization.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatorPlanDto } from './dto/creator-plan.dto';
 import {
-  AssignAudiobookPublisherDto,
+  AssignContentPublisherDto,
+  GiftContentType,
   UpdateMonetizationConfigDto,
   CreateGiftCatalogDto,
   UpdateGiftCatalogDto,
@@ -63,15 +65,33 @@ export class MonetizationController {
   }
 
   @UseGuards(JwtAuthGuard, FinancialAdminGuard)
-  @Get('admin/audiobook-publishers')
-  listAudiobookPublishers() {
-    return this.monetizationService.listAudiobookPublishers();
+  @Get(['admin/content-publishers', 'admin/audiobook-publishers'])
+  listContentPublishers() {
+    return this.monetizationService.listContentPublishers();
+  }
+
+  @UseGuards(JwtAuthGuard, FinancialAdminGuard)
+  @Put('admin/content/:type/:id/publisher')
+  assignContentPublisher(
+    @Param('type', new ParseEnumPipe(GiftContentType)) type: GiftContentType,
+    @Param('id') id: string,
+    @Body() dto: AssignContentPublisherDto,
+  ) {
+    return this.monetizationService.assignContentPublisher(type, id, dto.publisherId);
   }
 
   @UseGuards(JwtAuthGuard, FinancialAdminGuard)
   @Put('admin/audiobooks/:id/publisher')
-  assignAudiobookPublisher(@Param('id') id: string, @Body() dto: AssignAudiobookPublisherDto) {
-    return this.monetizationService.assignAudiobookPublisher(id, dto.publisherId);
+  assignAudiobookPublisher(@Param('id') id: string, @Body() dto: AssignContentPublisherDto) {
+    return this.monetizationService.assignContentPublisher(GiftContentType.AUDIOBOOK, id, dto.publisherId);
+  }
+
+  @Get('gifts/content/:type/:id/publisher')
+  getGiftPublisher(
+    @Param('type', new ParseEnumPipe(GiftContentType)) type: GiftContentType,
+    @Param('id') id: string,
+  ) {
+    return this.monetizationService.getGiftPublisher(type, id);
   }
 
   @UseGuards(JwtAuthGuard, FinancialAdminGuard)

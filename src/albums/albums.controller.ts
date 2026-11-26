@@ -26,8 +26,8 @@ export class AlbumsController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @CheckPermissions('create:album')
   @Post()
-  create(@Body() createAlbumDto: CreateAlbumDto) {
-    return this.albumsService.create(createAlbumDto);
+  create(@Request() req: { user: { id: string } }, @Body() createAlbumDto: CreateAlbumDto) {
+    return this.albumsService.create(createAlbumDto, req.user.id);
   }
 
   @Get()

@@ -154,6 +154,7 @@ export class SongsService {
 
     const data: any = {
       ...accessPeriodFields(dto),
+      ...(userId ? { publisher: { connect: { id: userId } } } : {}),
       title,
       duration: Number(duration),
       audioUrl,

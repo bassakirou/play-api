@@ -72,6 +72,12 @@ describe('Video taxonomy updates', () => {
     expect(f.update.mock.calls[0][0].data).not.toHaveProperty('videoTags');
     expect(f.db.videoTag.upsert).not.toHaveBeenCalled();
   });
+
+  it('records the administrator who publishes the draft even when another account owns the channel', async () => {
+    const f = fixture();
+    await f.service.update('video-1', { isPublished: true, publisherId: 'forged' }, { id: 'admin', role: 'ADMIN' });
+    expect(f.update.mock.calls[0][0].data).toMatchObject({ publisherId: 'admin', isPublished: true });
+  });
 });
 
 describe('Shared hybrid video publication', () => {
@@ -133,6 +139,7 @@ describe('Shared hybrid video publication', () => {
         mediaAssetId: 'asset-1',
         isPublished: true,
         publishWhenReady: false,
+        publisherId: 'owner',
         price: 0,
       });
       expect(f.saved().videoUrl).toBe(
@@ -148,6 +155,7 @@ describe('Shared hybrid video publication', () => {
       mediaAssetId: 'asset-1',
       isPublished: false,
       publishWhenReady: true,
+      publisherId: 'owner',
     });
     expect(f.saved().videoUrl).toMatch(/^pyramidplay:video:/);
     const [publicVideo] = await f.service.findAll();

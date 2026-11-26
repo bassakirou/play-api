@@ -148,6 +148,13 @@ export class InitiatePurchaseDto {
   phoneNumber: string; // 2376xxxxxxxx
 }
 
+export enum GiftContentType {
+  AUDIOBOOK = 'AUDIOBOOK',
+  ALBUM = 'ALBUM',
+  SONG = 'SONG',
+  VIDEO = 'VIDEO',
+}
+
 export class SendGiftDto {
   @IsOptional()
   @IsUUID()
@@ -166,6 +173,20 @@ export class SendGiftDto {
   @IsOptional()
   audiobookId?: string;
 
+  @IsIn(Object.values(GiftContentType))
+  @IsOptional()
+  contentType?: GiftContentType;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsOptional()
+  contentId?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsOptional()
+  expectedPublisherId?: string;
+
   @IsString()
   @IsNotEmpty()
   @Matches(/^(?:\+?237|00237)?[62]\d{8}$/)
@@ -176,7 +197,7 @@ export class SendGiftDto {
   message?: string;
 }
 
-export class AssignAudiobookPublisherDto {
+export class AssignContentPublisherDto {
   @IsUUID()
   publisherId: string;
 }

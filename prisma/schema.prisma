@@ -35,6 +35,9 @@ model User {
   videos           Video[]
   audiobooks       Audiobook[]     @relation("UserAudiobooks")
   publishedAudiobooks Audiobook[]  @relation("PublishedAudiobooks")
+  publishedAlbums     Album[]      @relation("PublishedAlbums")
+  publishedSongs      Song[]       @relation("PublishedSongs")
+  publishedVideos     Video[]      @relation("PublishedVideos")
   mediaAssets      MediaAsset[]
   lives            LiveStream[]    @relation("UserLives")
   liveComments     LiveComment[]
@@ -137,6 +140,8 @@ model Album {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   artist      Artist?       @relation(fields: [artistId], references: [id])
+  publisherId String?
+  publisher   User?         @relation("PublishedAlbums", fields: [publisherId], references: [id], onDelete: SetNull)
   groups      ArtistGroup[] @relation("AlbumGroups")
   songs       Song[]
 }
@@ -168,6 +173,8 @@ model Song {
   artists     Artist[]      @relation("SongArtists")
   groups      ArtistGroup[] @relation("SongGroups")
   favoritedBy User[]        @relation("UserFavorites")
+  publisherId String?
+  publisher   User?         @relation("PublishedSongs", fields: [publisherId], references: [id], onDelete: SetNull)
 }
 
 model Genre {
@@ -238,6 +245,8 @@ model Video {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  publisherId   String?
+  publisher     User?           @relation("PublishedVideos", fields: [publisherId], references: [id], onDelete: SetNull)
   genre         Genre?          @relation(fields: [genreId], references: [id])
   videoCategory VideoCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   videoTags     VideoTagOnVideo[]

@@ -1,4 +1,5 @@
 import { MonetizationService } from './monetization.service';
+import { GiftContentType } from './dto/monetization.dto';
 
 describe('payment confirmation', () => {
   let db: any; let tara: any; let service: MonetizationService;
@@ -134,7 +135,7 @@ describe('payment confirmation', () => {
     expect(tara.initiateMobilePay).not.toHaveBeenCalled();
   });
 
-  describe('audiobook gifts', () => {
+  describe('gifts for published content', () => {
     const dto = { audiobookId: 'book-1', giftCatalogId: 'gift', phoneNumber: '237699999999' };
 
     beforeEach(() => {
@@ -176,6 +177,40 @@ describe('payment confirmation', () => {
       await expect(service.sendGift('buyer', dto, 'https://local.test')).resolves.toMatchObject({ reused: true });
       await expect(service.sendGift('buyer', { ...dto, audiobookId: 'book-2' }, 'https://local.test')).rejects.toThrow('Demande déjà utilisée');
       expect(db.audiobook.findUnique).not.toHaveBeenCalled();
+      expect(tara.initiateMobilePay).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [GiftContentType.ALBUM, 'album'],
+      [GiftContentType.SONG, 'song'],
+      [GiftContentType.VIDEO, 'video'],
+    ])('credits the recorded publisher for %s', async (contentType, model) => {
+      db[model] = { findUnique: jest.fn().mockResolvedValue({ title: 'Test', publisherId: 'publisher' }) };
+      const { audiobookId: contentId, ...gift } = dto;
+      await service.sendGift('buyer', { ...gift, contentType, contentId, expectedPublisherId: 'publisher' }, 'https://local.test');
+      expect(db[model].findUnique).toHaveBeenCalledWith(expect.objectContaining({
+        where: model === 'video' ? { id: contentId, isPublished: true } : { id: contentId },
+      }));
+      expect(db.transaction.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          beneficiaryUserId: 'publisher',
+          metadata: expect.objectContaining({ contentType, contentId }),
+        }),
+      });
+      expect(db.artist.findUnique).not.toHaveBeenCalled();
+      expect(tara.initiateMobilePay).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a new gift identified only by an artist ID', async () => {
+      const { audiobookId: _audiobookId, ...gift } = dto;
+      await expect(service.sendGift('buyer', { ...gift, recipientArtistId: 'artist' }, 'https://local.test')).rejects.toThrow('Sélectionnez le contenu');
+      expect(db.transaction.create).not.toHaveBeenCalled();
+      expect(tara.initiateMobilePay).not.toHaveBeenCalled();
+    });
+
+    it('rejects a gift when the publisher has changed since the dialog opened', async () => {
+      await expect(service.sendGift('buyer', { ...dto, expectedPublisherId: 'previous' }, 'https://local.test')).rejects.toThrow('a changé');
+      expect(db.transaction.create).not.toHaveBeenCalled();
       expect(tara.initiateMobilePay).not.toHaveBeenCalled();
     });
   });
