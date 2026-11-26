@@ -225,6 +225,8 @@ export class UsersService {
       'email',
       'password',
       'name',
+      'profileImageUrl',
+      'profileBannerUrl',
       'systemRoles',
       'resetToken',
       'resetTokenExpiry',

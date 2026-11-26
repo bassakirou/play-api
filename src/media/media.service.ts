@@ -8,6 +8,7 @@ import { CreateMediaAssetDto } from './dto/create-media-asset.dto';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { randomBytes } from 'crypto';
+import { MediaUploadSettingsService } from '../files/media-upload-settings';
 
 @Injectable()
 export class MediaService {
@@ -32,6 +33,7 @@ export class MediaService {
     private readonly minio: MinioService,
     private readonly blob: VercelBlobService,
     private readonly hlsTranscoder: HlsTranscoderService,
+    private readonly uploadSettings: MediaUploadSettingsService,
   ) {}
 
   async findAll(params?: { type?: string; search?: string; userId?: string }) {
@@ -113,6 +115,10 @@ export class MediaService {
 
     const detectedType: 'audio' | 'video' | 'image' =
       meta?.type || (isAudio ? 'audio' : isVideo ? 'video' : 'image');
+    if (!['image', 'audio', 'video'].includes(detectedType)) {
+      throw new BadRequestException('Type de média invalide.');
+    }
+    await this.uploadSettings.assertSize(isImage ? 'image' : detectedType, file.size ?? file.buffer?.length ?? 0);
 
     const bucket = detectedType === 'audio' ? 'audio' : detectedType === 'video' ? 'videos' : 'images';
     const uniqueName = `${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;

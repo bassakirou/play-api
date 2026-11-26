@@ -20,6 +20,8 @@ model User {
   resetToken       String?
   resetTokenExpiry DateTime?
   isEmailVerified  Boolean         @default(false)
+  profileImageUrl  String?
+  profileBannerUrl String?
   verificationCode String?
   verificationCodeExpiry DateTime?
   createdAt        DateTime        @default(now())
@@ -701,6 +703,15 @@ model ShareModalConfig {
   showMediaPreview  Boolean  @default(false)
   showCustomization Boolean  @default(false)
   updatedAt         DateTime @updatedAt
+}
+
+model MediaUploadConfig {
+  id        String @id @default("default")
+  avatarKiB Int    @default(300)
+  bannerKiB Int    @default(300)
+  imageKiB  Int    @default(300)
+  audioMiB  Int    @default(500)
+  videoMiB  Int    @default(500)
 }
 
 model LiveSettingsConfig {

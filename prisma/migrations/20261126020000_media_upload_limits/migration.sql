@@ -1,0 +1,10 @@
+CREATE TABLE "MediaUploadConfig" (
+    "id" TEXT NOT NULL DEFAULT 'default',
+    "avatarKiB" INTEGER NOT NULL DEFAULT 300,
+    "bannerKiB" INTEGER NOT NULL DEFAULT 300,
+    "imageKiB" INTEGER NOT NULL DEFAULT 300,
+    "audioMiB" INTEGER NOT NULL DEFAULT 500,
+    "videoMiB" INTEGER NOT NULL DEFAULT 500,
+
+    CONSTRAINT "MediaUploadConfig_pkey" PRIMARY KEY ("id")
+);

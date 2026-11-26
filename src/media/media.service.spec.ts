@@ -27,6 +27,7 @@ describe('Video originals', () => {
       minio as any,
       blob as any,
       transcoder as any,
+      { assertSize: jest.fn() } as any,
     );
     const result = await service.uploadAndCreate(
       {
@@ -55,6 +56,7 @@ describe('Video originals', () => {
         upload: async () => 'https://external.test/video.mp4',
       } as any,
       {} as any,
+      { assertSize: jest.fn() } as any,
     );
     await expect(
       service.uploadAndCreate({

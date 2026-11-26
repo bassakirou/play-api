@@ -17,7 +17,8 @@ import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { LegacyMediaGuard } from '../content-access/legacy-media.guard';
 import { MediaSourceOwnershipService } from '../content-access/media-source-ownership.service';
 import { isMediaStorageUrl } from '../content-access/media-storage-url';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { LimitedFileInterceptor } from './limited-file.interceptor';
+import { imageUploadKind } from './media-upload-settings';
 import { diskStorage, memoryStorage } from 'multer';
 import { extname, join, resolve, sep } from 'path';
 import { randomBytes } from 'crypto';
@@ -79,21 +80,21 @@ function getImageDimensions(buffer: Buffer): { width: number; height: number } |
     buffer[11] === 0x50
   ) {
     // VP8 lossy
-    if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38 && buffer[15] === 0x20) {
+    if (buffer.length >= 30 && buffer.toString('ascii', 12, 16) === 'VP8 ') {
       return {
         width: buffer.readUInt16LE(26) & 0x3fff,
         height: buffer.readUInt16LE(28) & 0x3fff,
       };
     }
     // VP8X extended
-    if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38 && buffer[15] === 0x58) {
+    if (buffer.length >= 30 && buffer.toString('ascii', 12, 16) === 'VP8X') {
       return {
         width: 1 + buffer.readUIntLE(24, 3),
         height: 1 + buffer.readUIntLE(27, 3),
       };
     }
     // VP8L lossless
-    if (buffer[12] === 0x56 && buffer[13] === 0x50 && buffer[14] === 0x38 && buffer[15] === 0x4c) {
+    if (buffer.length >= 25 && buffer.toString('ascii', 12, 16) === 'VP8L') {
       if (buffer[20] === 0x2f) {
         const b1 = buffer[21];
         const b2 = buffer[22];
@@ -394,12 +395,7 @@ export class FilesController {
 
   @Post('upload-audio')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: 1024 * 1024 * 500 },
-    }),
-  )
+  @UseInterceptors(LimitedFileInterceptor('audio', { storage: memoryStorage() }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -498,7 +494,7 @@ export class FilesController {
 
   @Post('upload-image')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @UseInterceptors(LimitedFileInterceptor('image', { storage: memoryStorage() }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -518,18 +514,22 @@ export class FilesController {
       );
     }
 
-    // 2. Validation de la taille maximale (300 Ko)
-    const MAX_IMAGE_SIZE = 300 * 1024; // 300 Ko
-    const fileSize = file.size || (file.buffer ? file.buffer.length : 0);
-    if (fileSize > MAX_IMAGE_SIZE) {
-      throw new BadRequestException(
-        `L'image dépasse la taille maximale autorisée de 300 Ko (${(fileSize / 1024).toFixed(1)} Ko reçus). Veuillez optimiser ou compresser votre image.`,
-      );
-    }
-
     // 2. Validation des dimensions minimales (Min 300x300 px)
     if (file.buffer) {
       const dimensions = getImageDimensions(file.buffer);
+      const purpose = imageUploadKind(req?.query?.purpose);
+      if (purpose !== 'image') {
+        const matchesFormat = extRaw === 'png'
+          ? file.buffer.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+          : extRaw === 'webp'
+            ? file.buffer.toString('ascii', 0, 4) === 'RIFF' && file.buffer.toString('ascii', 8, 12) === 'WEBP'
+            : file.buffer[0] === 0xff && file.buffer[1] === 0xd8;
+        if (!dimensions || !matchesFormat) throw new BadRequestException('Image illisible ou format invalide. Choisissez un JPEG, un PNG ou un WebP.');
+        if (dimensions.width > 4096 || dimensions.height > 4096) {
+          throw new BadRequestException('L’image de profil dépasse 4 096 px sur un côté. Réduisez ses dimensions.');
+        }
+        file.mimetype = extRaw === 'jpg' ? 'image/jpeg' : `image/${extRaw}`;
+      }
       if (dimensions) {
         const MIN_DIMENSION = 300;
         if (dimensions.width < MIN_DIMENSION || dimensions.height < MIN_DIMENSION) {
@@ -616,7 +616,7 @@ export class FilesController {
 
   @Post('analyze-video')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('file', { storage: diskVideoStorage() }))
+  @UseInterceptors(LimitedFileInterceptor('video', { storage: diskVideoStorage() }))
   async analyzeVideo(
     @UploadedFile() file?: Express.Multer.File,
     @Req() req?: any,
@@ -693,7 +693,7 @@ export class FilesController {
 
   @Post('generate-video-variants')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('file', { storage: diskVideoStorage() }))
+  @UseInterceptors(LimitedFileInterceptor('video', { storage: diskVideoStorage() }))
   async generateVideoVariants(
     @UploadedFile() file?: Express.Multer.File,
     @Req() req?: any,
@@ -781,12 +781,7 @@ export class FilesController {
 
   @Post('upload-video')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskVideoStorage(),
-      limits: { fileSize: 1024 * 1024 * 500 },
-    }),
-  )
+  @UseInterceptors(LimitedFileInterceptor('video', { storage: diskVideoStorage() }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {

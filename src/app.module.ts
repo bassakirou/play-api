@@ -11,6 +11,7 @@ import { GenresModule } from './genres/genres.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { HealthController } from './health.controller';
 import { FilesController } from './files/files.controller';
+import { MediaUploadSettingsModule } from './files/media-upload-settings';
 import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './auth/auth.module';
 import { ArtistGroupsModule } from './artist-groups/artist-groups.module';
@@ -46,6 +47,7 @@ import { ContentAccessModule } from './content-access/content-access.module';
     PrismaModule,
     ContentAccessModule,
     StorageModule,
+    MediaUploadSettingsModule,
     AuthModule,
     MailModule,
     UsersModule,

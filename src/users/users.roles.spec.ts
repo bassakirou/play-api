@@ -39,6 +39,23 @@ describe('administrative role boundaries', () => {
     controller.updateProfile({ user: { userId: 'member' } }, { name: 'Safe', role: 'ADMIN', roleId: 'admin', systemRoles: ['ADMIN'], resetToken: 'token', isEmailVerified: true });
     expect(update).toHaveBeenCalledWith('member', { name: 'Safe' });
   });
+  it('keeps member images on the account and leaves the artist profile alone', async () => {
+    const controller = new UsersController(service);
+    const images = {
+      profileImageUrl: 'https://media.example.test/images/photo.webp',
+      profileBannerUrl: 'http://localhost:9000/images/banner.png',
+    };
+    await controller.updateProfile({ user: { userId: 'member' } }, images);
+    expect(db.user.update).toHaveBeenCalledWith(expect.objectContaining({ data: images }));
+    expect(db.artist.upsert).not.toHaveBeenCalled();
+  });
+  it('rejects invalid account image URLs through the profile route', () => {
+    const controller = new UsersController(service);
+    expect(() => controller.updateProfile({ user: { userId: 'member' } }, {
+      profileImageUrl: { set: 'https://media.example.test/photo.png' },
+    })).toThrow('Adresse d’image de profil invalide.');
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
   it('rejects Prisma mutation objects in ordinary system role updates', async () => {
     await expect(service.update('member', { systemRoles: { push: 'ADMIN' } } as any)).rejects.toThrow();
     expect(db.user.update).not.toHaveBeenCalled();

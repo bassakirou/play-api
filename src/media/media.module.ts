@@ -3,9 +3,10 @@ import { MediaService } from './media.service';
 import { MediaController } from './media.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StorageModule } from '../storage/storage.module';
+import { MediaUploadSettingsModule } from '../files/media-upload-settings';
 
 @Module({
-  imports: [PrismaModule, StorageModule],
+  imports: [PrismaModule, StorageModule, MediaUploadSettingsModule],
   controllers: [MediaController],
   providers: [MediaService],
   exports: [MediaService],

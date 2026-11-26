@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Body,
+  BadRequestException,
   Patch,
   Param,
   Delete,
@@ -34,7 +35,15 @@ export class UsersController {
   @Patch('me/profile')
   @ApiOperation({ summary: 'Update current user profile' })
   updateProfile(@Request() req, @Body() updateUserDto: any) {
-    const fields = ['email', 'password', 'name', 'bio', 'imageUrl', 'bannerUrl', 'country', 'gallery'];
+    const accountImages = ['profileImageUrl', 'profileBannerUrl'];
+    for (const field of accountImages) {
+      const value: unknown = updateUserDto?.[field];
+      if (value !== undefined && value !== null &&
+        (typeof value !== 'string' || value.length > 2048 || !/^(https?:\/\/[^/\s]|\/uploads\/)/i.test(value))) {
+        throw new BadRequestException('Adresse d’image de profil invalide.');
+      }
+    }
+    const fields = ['email', 'password', 'name', 'bio', 'imageUrl', 'bannerUrl', 'country', 'gallery', ...accountImages];
     const profile = Object.fromEntries(fields.filter(key => updateUserDto?.[key] !== undefined).map(key => [key, updateUserDto[key]]));
     return this.usersService.update(req.user.userId, profile);
   }
